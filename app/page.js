@@ -35,21 +35,40 @@ function Empty({ icon, text }) { return <div className="empty-state"><div classN
 
 function AuthPage({ onLogin }) {
   const [mode, setMode] = useState('login')
+  const [role, setRole] = useState('patient')
   const [form, setForm] = useState({ email:'', password:'', name:'' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
+  const roles = [
+    { id:'patient', label:'Patient', icon:'👤', color:'#2563eb' },
+    { id:'doctor',  label:'Doctor',  icon:'🩺', color:'#16a34a' },
+    { id:'admin',   label:'Admin',   icon:'👑', color:'#d97706' },
+  ]
+
   const handleLogin = async () => {
     setLoading(true); setError('')
     const { data, error } = await supabase.auth.signInWithPassword({ email:form.email, password:form.password })
     if (error) { setError(error.message); setLoading(false); return }
-    const { data: profile } = await supabase.from('users').select('*').eq('auth_id', data.user.id).single()
+    const { data:profile } = await supabase.from('users').select('*').eq('auth_id', data.user.id).single()
+    if (role==='admin' && !profile?.is_admin) {
+      await supabase.auth.signOut(); setError('This account is not an Admin account.'); setLoading(false); return
+    }
+    if (role==='doctor' && !profile?.is_doctor) {
+      await supabase.auth.signOut(); setError('This account is not a Doctor account.'); setLoading(false); return
+    }
+    if (role==='patient' && (profile?.is_admin || profile?.is_doctor)) {
+      await supabase.auth.signOut(); setError('Please select the correct role for this account.'); setLoading(false); return
+    }
     onLogin(data.user, profile)
     setLoading(false)
   }
 
   const handleRegister = async () => {
+    if (role !== 'patient') {
+      setError('Only Patient accounts can self-register. Doctor & Admin accounts are created by the system admin.'); return
+    }
     if (!form.name) return setError('Please enter your name')
     if (form.password.length < 6) return setError('Password must be at least 6 characters')
     setLoading(true); setError('')
@@ -59,6 +78,8 @@ function AuthPage({ onLogin }) {
     setLoading(false)
   }
 
+  const activeRole = roles.find(r => r.id === role)
+
   return (
     <div className="auth-page">
       <div style={{ textAlign:'center', position:'relative', zIndex:1 }}>
@@ -66,11 +87,28 @@ function AuthPage({ onLogin }) {
         <div style={{ fontSize:11, color:'rgba(255,255,255,0.35)', letterSpacing:'2.5px', textTransform:'uppercase', marginTop:5 }}>Dose Tracker System</div>
       </div>
       <div className="auth-card">
+        {/* Role Selector */}
         <div style={{ marginBottom:24 }}>
-          <div style={{ fontFamily:'Fraunces, serif', fontSize:24, fontWeight:700, color:'#0f172a' }}>{mode==='login'?'Welcome back':'Create account'}</div>
-          <div style={{ fontSize:13, color:'#94a3b8', marginTop:4 }}>{mode==='login'?'Sign in to MediTrack':'Join MediTrack today'}</div>
+          <div style={{ fontSize:11, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'1.5px', fontWeight:600, marginBottom:10 }}>Login as</div>
+          <div style={{ display:'flex', gap:10 }}>
+            {roles.map(r => (
+              <button key={r.id} onClick={() => { setRole(r.id); setError(''); setSuccess('') }}
+                style={{ flex:1, padding:'12px 8px', borderRadius:12, border:`2px solid ${role===r.id?r.color:'#e2e8f0'}`, background:role===r.id?`${r.color}10`:'#f8fafc', color:role===r.id?r.color:'#94a3b8', fontWeight:role===r.id?700:500, fontSize:13, cursor:'pointer', fontFamily:'Plus Jakarta Sans, sans-serif', transition:'all 0.2s', display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
+                <span style={{ fontSize:20 }}>{r.icon}</span>
+                <span>{r.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
-        <div style={{ display:'flex', background:'#f1f5f9', borderRadius:10, padding:4, marginBottom:24 }}>
+
+        {/* Title */}
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontFamily:'Fraunces, serif', fontSize:22, fontWeight:700, color:'#0f172a' }}>{mode==='login'?`${activeRole.icon} ${activeRole.label} Login`:'📝 Create Account'}</div>
+          <div style={{ fontSize:13, color:'#94a3b8', marginTop:4 }}>{mode==='login'?`Sign in as ${activeRole.label}`:'Register as a new patient'}</div>
+        </div>
+
+        {/* Login / Register Toggle */}
+        <div style={{ display:'flex', background:'#f1f5f9', borderRadius:10, padding:4, marginBottom:20 }}>
           {['login','register'].map(m => (
             <button key={m} onClick={() => { setMode(m); setError(''); setSuccess('') }}
               style={{ flex:1, padding:'9px 0', borderRadius:8, border:'none', background:mode===m?'#fff':'transparent', color:mode===m?'#0f172a':'#94a3b8', fontWeight:mode===m?700:500, fontSize:13, cursor:'pointer', fontFamily:'Plus Jakarta Sans, sans-serif', transition:'all 0.2s', boxShadow:mode===m?'0 1px 4px rgba(0,0,0,0.1)':'none' }}>
@@ -78,12 +116,25 @@ function AuthPage({ onLogin }) {
             </button>
           ))}
         </div>
+
         {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#dc2626', marginBottom:16 }}>❌ {error}</div>}
         {success && <div style={{ background:'#ecfdf5', border:'1px solid #a7f3d0', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#059669', marginBottom:16 }}>✅ {success}</div>}
-        {mode==='register' && <div className="form-group"><label className="form-label">Full Name</label><input className="form-input" placeholder="John Doe" value={form.name} onChange={e => setForm({ ...form, name:e.target.value })} /></div>}
-        <div className="form-group"><label className="form-label">Email Address</label><input className="form-input" type="email" placeholder="you@example.com" value={form.email} onChange={e => setForm({ ...form, email:e.target.value })} onKeyDown={e => e.key==='Enter' && (mode==='login'?handleLogin():handleRegister())} /></div>
-        <div className="form-group"><label className="form-label">Password</label><input className="form-input" type="password" placeholder="••••••••" value={form.password} onChange={e => setForm({ ...form, password:e.target.value })} onKeyDown={e => e.key==='Enter' && (mode==='login'?handleLogin():handleRegister())} /></div>
-        <button className="btn btn-primary" style={{ width:'100%', padding:'12px', marginTop:6, fontSize:14, justifyContent:'center' }} onClick={mode==='login'?handleLogin:handleRegister} disabled={loading}>{loading?'⏳ Please wait...':mode==='login'?'🔑 Sign In':'📝 Create Account'}</button>
+
+        {mode==='register' && role!=='patient' && (
+          <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#d97706', marginBottom:16 }}>
+            ⚠️ Only Patient accounts can self-register. Contact admin for Doctor & Admin access.
+          </div>
+        )}
+
+        {mode==='register' && <div className="form-group"><label className="form-label">Full Name</label><input className="form-input" placeholder="John Doe" value={form.name} onChange={e => setForm({...form,name:e.target.value})}/></div>}
+        <div className="form-group"><label className="form-label">Email Address</label><input className="form-input" type="email" placeholder="you@example.com" value={form.email} onChange={e => setForm({...form,email:e.target.value})} onKeyDown={e => e.key==='Enter' && (mode==='login'?handleLogin():handleRegister())}/></div>
+        <div className="form-group"><label className="form-label">Password</label><input className="form-input" type="password" placeholder="••••••••" value={form.password} onChange={e => setForm({...form,password:e.target.value})} onKeyDown={e => e.key==='Enter' && (mode==='login'?handleLogin():handleRegister())}/></div>
+
+        <button className="btn btn-primary" style={{ width:'100%', padding:'12px', marginTop:6, fontSize:14, justifyContent:'center', background:activeRole.color, borderColor:activeRole.color }}
+          onClick={mode==='login'?handleLogin:handleRegister} disabled={loading}>
+          {loading?'⏳ Please wait...':mode==='login'?`${activeRole.icon} Sign in as ${activeRole.label}`:'📝 Create Account'}
+        </button>
+
         <div style={{ textAlign:'center', marginTop:18, fontSize:12.5, color:'#94a3b8' }}>
           {mode==='login'?"Don't have an account? ":'Already have an account? '}
           <span style={{ color:'#1a3c5e', cursor:'pointer', fontWeight:700 }} onClick={() => { setMode(mode==='login'?'register':'login'); setError(''); setSuccess('') }}>{mode==='login'?'Register here':'Login here'}</span>
@@ -143,15 +194,12 @@ function Topbar({ title, onLogout }) {
   )
 }
 
-// ── USER PAGES ───────────────────────────────────
-
 function UserDashboard({ showToast, profile }) {
   const [scheds, setScheds] = useState([])
   const [reminders, setReminders] = useState([])
   const [stats, setStats] = useState({})
   const [loading, setLoading] = useState(true)
   const today = new Date().toISOString().split('T')[0]
-
   const load = useCallback(async () => {
     setLoading(true)
     const { data:d } = await supabase.from('schedule').select('schedule_id,start_date,end_date,time,dosage(amount,unit,frequency,medicine(name,prescription(user_id)))').order('time')
@@ -167,16 +215,13 @@ function UserDashboard({ showToast, profile }) {
     setStats({ todayDoses:todayScheds.length, taken, missed, active:myScheds.length, adherence })
     setLoading(false)
   }, [profile, today])
-
   useEffect(() => { load() }, [load])
-
   const statsConfig = [
     { label:"Today's Doses", value:stats.todayDoses??0, sub:`${stats.taken??0} taken · ${(stats.todayDoses??0)-(stats.taken??0)} remaining`, bar:(stats.taken/(stats.todayDoses||1))*100, accent:'#2563eb', accentLight:'#eff6ff' },
     { label:'Adherence Rate', value:`${stats.adherence??89}%`, sub:'This week', bar:stats.adherence??89, accent:'#16a34a', accentLight:'#dcfce7' },
     { label:'Active Medicines', value:stats.active??0, sub:'Your prescriptions', bar:70, accent:'#d97706', accentLight:'#fffbeb' },
     { label:'Missed Today', value:stats.missed??0, sub:'Check schedule', bar:(stats.missed??0)*20, accent:'#dc2626', accentLight:'#fef2f2' },
   ]
-
   return (
     <div>
       <div className="stats-grid">
@@ -274,10 +319,7 @@ function UserSchedule({ showToast, profile }) {
     <div className="section-card">
       <div className="section-header">
         <div><div className="section-title">📅 My Schedule</div><div className="section-subtitle">Active medicine schedules</div></div>
-        <div style={{ display:'flex', gap:8 }}>
-          <button className="btn btn-ghost btn-sm">Week View</button>
-          <button className="btn btn-ghost btn-sm">Month View</button>
-        </div>
+        <div style={{ display:'flex', gap:8 }}><button className="btn btn-ghost btn-sm">Week View</button><button className="btn btn-ghost btn-sm">Month View</button></div>
       </div>
       {loading?<Loader/>:data.length===0?<Empty icon="📅" text="No schedules found"/>:(
         <table>
@@ -287,8 +329,7 @@ function UserSchedule({ showToast, profile }) {
             return (
               <tr key={s.schedule_id}>
                 <td><strong>{s.dosage?.medicine?.name||'—'}</strong></td>
-                <td>{s.dosage?.amount} {s.dosage?.unit}</td>
-                <td>{s.dosage?.frequency}</td>
+                <td>{s.dosage?.amount} {s.dosage?.unit}</td><td>{s.dosage?.frequency}</td>
                 <td>{s.start_date}</td><td>{s.end_date}</td>
                 <td><span className="badge badge-blue">{s.time?.slice(0,5)}</span></td>
                 <td><span className={`badge ${active?'badge-green':'badge-red'}`}>{active?'Active':'Ended'}</span></td>
@@ -328,8 +369,7 @@ function UserPrescriptions({ showToast, profile }) {
             return (
               <tr key={p.prescription_id}>
                 <td><strong>#RX-{String(p.prescription_id).padStart(4,'0')}</strong></td>
-                <td>{p.doctor?.name||'—'}</td>
-                <td>{p.date_issued}</td>
+                <td>{p.doctor?.name||'—'}</td><td>{p.date_issued}</td>
                 <td>{Array.isArray(p.medicine)?p.medicine.map(m=>m.name).join(', '):p.medicine?.name||'—'}</td>
                 <td style={{ maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{p.notes||'—'}</td>
                 <td><span className={`badge ${s.cls}`}>{s.label}</span></td>
@@ -568,8 +608,6 @@ function UserProfile({ showToast, profile, user }) {
   )
 }
 
-// ── DOCTOR PAGES ─────────────────────────────────
-
 function DoctorDashboard({ showToast, user, profile }) {
   const [stats, setStats] = useState({})
   const [prescriptions, setPrescriptions] = useState([])
@@ -774,8 +812,6 @@ function DoctorSchedules({ showToast, user }) {
     </div>
   )
 }
-
-// ── ADMIN PAGES ──────────────────────────────────
 
 function AdminDashboard({ showToast, user, profile }) {
   const [stats, setStats] = useState({})
@@ -1223,8 +1259,6 @@ function AdminIntakeLogs({ showToast }) {
   )
 }
 
-// ── PAGE DEFINITIONS ─────────────────────────────
-
 const ADMIN_PAGES = [
   { id:'dashboard',     label:'Dashboard',     icon:'🏠', section:'Main'     },
   { id:'users',         label:'Users',         icon:'👥', section:'Main'     },
@@ -1235,7 +1269,6 @@ const ADMIN_PAGES = [
   { id:'reminders',     label:'Reminders',     icon:'🔔', section:'Tracking' },
   { id:'intakelogs',    label:'Intake Log',    icon:'📝', section:'Tracking' },
 ]
-
 const DOCTOR_PAGES = [
   { id:'dashboard',     label:'Dashboard',           icon:'🏠', section:'Main'    },
   { id:'patients',      label:'My Patients',          icon:'👥', section:'Main'    },
@@ -1243,7 +1276,6 @@ const DOCTOR_PAGES = [
   { id:'medicines',     label:'Medicines Prescribed', icon:'💊', section:'Medical' },
   { id:'schedules',     label:'Patient Schedules',    icon:'📅', section:'Medical' },
 ]
-
 const USER_PAGES = [
   { id:'dashboard',     label:'Dashboard',     icon:'🏠', section:'Main'      },
   { id:'medicines',     label:'Medicines',     icon:'💊', section:'Medical'   },
@@ -1254,8 +1286,6 @@ const USER_PAGES = [
   { id:'doctors',       label:'Doctors',       icon:'🩺', section:'Personal'  },
   { id:'profile',       label:'My Profile',    icon:'👤', section:'Personal'  },
 ]
-
-// ── MAIN APP ─────────────────────────────────────
 
 export default function App() {
   const [user, setUser]               = useState(null)
@@ -1346,5 +1376,3 @@ export default function App() {
     </div>
   )
 }
-
-
