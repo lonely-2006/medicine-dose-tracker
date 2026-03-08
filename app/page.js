@@ -51,14 +51,14 @@ function AuthPage({ onLogin }) {
     onLogin(data.user, profile); setLoading(false)
   }
   const handleRegister = async () => {
-    if (role !== 'patient') { setError('Only Patient accounts can self-register.'); return }
+    if (role === 'admin') { setError('Admin accounts cannot self-register.'); return }
     if (!form.name) return setError('Please enter your name')
     if (form.password.length < 6) return setError('Password must be at least 6 characters')
     setLoading(true); setError('')
     const { data: authData, error: authError } = await supabase.auth.signUp({ email:form.email, password:form.password, options:{ data:{ name:form.name } } })
     if (authError) { setError(authError.message); setLoading(false); return }
     if (authData?.user) {
-      await supabase.from('users').insert({ auth_id: authData.user.id, name: form.name, email: form.email, is_admin: false, is_doctor: false })
+      await supabase.from('users').insert({ auth_id: authData.user.id, name: form.name, email: form.email, is_admin: false, is_doctor: role==='doctor' })
     }
     setSuccess('Account created! Please login now.')
     setLoading(false)
@@ -96,7 +96,7 @@ function AuthPage({ onLogin }) {
         </div>
         {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#dc2626', marginBottom:16 }}>❌ {error}</div>}
         {success && <div style={{ background:'#ecfdf5', border:'1px solid #a7f3d0', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#059669', marginBottom:16 }}>✅ {success}</div>}
-        {mode==='register' && role!=='patient' && <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#d97706', marginBottom:16 }}>⚠️ Only Patient accounts can self-register.</div>}
+        {mode==='register' && role==='admin' && <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#d97706', marginBottom:16 }}>⚠️ Only Admin accounts cannot self-register.</div>}
         {mode==='register' && <div className="form-group"><label className="form-label">Full Name</label><input className="form-input" placeholder="John Doe" value={form.name} onChange={e => setForm({...form,name:e.target.value})}/></div>}
         <div className="form-group"><label className="form-label">Email Address</label><input className="form-input" type="email" placeholder="you@example.com" value={form.email} onChange={e => setForm({...form,email:e.target.value})} onKeyDown={e => e.key==='Enter' && (mode==='login'?handleLogin():handleRegister())}/></div>
         <div className="form-group"><label className="form-label">Password</label><input className="form-input" type="password" placeholder="••••••••" value={form.password} onChange={e => setForm({...form,password:e.target.value})} onKeyDown={e => e.key==='Enter' && (mode==='login'?handleLogin():handleRegister())}/></div>
