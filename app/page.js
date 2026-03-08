@@ -1285,48 +1285,90 @@ function AdminDashboard({ showToast }) {
   )
 }
 
-// ── ADMIN USERS (FIXED) ──────────────────────────
+// ── ADMIN USERS (FIXED - shows patients + doctors) ──
 function AdminUsers({ showToast }) {
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(null)
+  const [filter, setFilter] = useState('All')
   const [form, setForm] = useState({ name:'', phone:'', age:'', gender:'Male', email:'' })
+
   const load = useCallback(async () => {
     setLoading(true)
-    const { data:d, error } = await supabase.from('users').select('*').order('user_id')
-    console.log('USERS DATA:', d)
-    console.log('USERS ERROR:', error)
-    if (error) showToast(error.message,'error'); else setData(d||[])
+    // Fetch patients/admins from users table
+    const { data:users, error:usersError } = await supabase.from('users').select('*').order('user_id')
+    if (usersError) { showToast(usersError.message,'error'); setLoading(false); return }
+
+    // Fetch doctors from doctor table
+    const { data:doctors, error:doctorsError } = await supabase.from('doctor').select('*').order('doctor_id')
+    if (doctorsError) { showToast(doctorsError.message,'error') }
+
+    // Combine: mark doctors with a _type field
+    const patientRows = (users||[]).map(u => ({ ...u, _type: u.is_admin?'admin':'patient' }))
+    const doctorRows  = (doctors||[]).map(d => ({ user_id: d.doctor_id, name: d.name, email: d.email, phone: d.phone||'—', age: '—', gender: '—', is_admin: false, is_doctor: true, _type:'doctor', _doctor_id: d.doctor_id }))
+
+    setData([...patientRows, ...doctorRows])
     setLoading(false)
   }, [showToast])
+
   useEffect(() => { load() }, [load])
+
   const save = async () => {
-    const payload = { name:form.name, phone:form.phone, age:parseInt(form.age), gender:form.gender, email:form.email }
-    const { error } = modal==='add'?await supabase.from('users').insert(payload):await supabase.from('users').update(payload).eq('user_id',form.user_id)
+    const payload = { name:form.name, phone:form.phone, age:parseInt(form.age)||0, gender:form.gender, email:form.email }
+    const { error } = modal==='add'
+      ? await supabase.from('users').insert(payload)
+      : await supabase.from('users').update(payload).eq('user_id', form.user_id)
     if (error) return showToast(error.message,'error')
     showToast(modal==='add'?'User added!':'User updated!'); setModal(null); load()
   }
-  const remove = async (id) => {
-    if (!confirm(`Delete user #${id}?`)) return
-    await supabase.from('users').delete().eq('user_id',id)
+
+  const remove = async (u) => {
+    if (!confirm(`Delete ${u.name}?`)) return
+    if (u._type === 'doctor') {
+      await supabase.from('doctor').delete().eq('doctor_id', u._doctor_id)
+    } else {
+      await supabase.from('users').delete().eq('user_id', u.user_id)
+    }
     showToast('Deleted!'); load()
   }
-  const getRole = u => u.is_admin?<span className="badge badge-yellow">👑 Admin</span>:u.is_doctor?<span className="badge badge-blue">🩺 Doctor</span>:<span className="badge badge-teal">👤 Patient</span>
+
+  const getRoleBadge = u => {
+    if (u._type==='admin')   return <span className="badge badge-yellow">👑 Admin</span>
+    if (u._type==='doctor')  return <span className="badge badge-blue">🩺 Doctor</span>
+    return <span className="badge badge-teal">👤 Patient</span>
+  }
+
+  const filtered = filter==='All' ? data : data.filter(u => u._type===filter.toLowerCase())
+
   return (
     <div>
       <div className="section-card">
-        <div className="section-header"><div><div className="section-title">👥 All Users</div></div><button className="btn btn-primary btn-sm" onClick={() => { setForm({ name:'',phone:'',age:'',gender:'Male',email:'' }); setModal('add') }}>+ Add User</button></div>
-        {loading?<Loader/>:data.length===0?<Empty icon="👥" text="No users"/>:(
+        <div className="section-header">
+          <div><div className="section-title">👥 All Users</div><div className="section-subtitle">{data.length} total — patients, doctors & admins</div></div>
+          <div style={{ display:'flex', gap:8 }}>
+            {['All','Patient','Doctor','Admin'].map(f => (
+              <button key={f} className={`btn btn-sm ${filter===f?'btn-primary':'btn-ghost'}`} onClick={() => setFilter(f)}>{f}</button>
+            ))}
+            <button className="btn btn-primary btn-sm" onClick={() => { setForm({ name:'',phone:'',age:'',gender:'Male',email:'' }); setModal('add') }}>+ Add User</button>
+          </div>
+        </div>
+        {loading?<Loader/>:filtered.length===0?<Empty icon="👥" text="No users"/>:(
           <table>
             <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Age</th><th>Gender</th><th>Email</th><th>Role</th><th>Actions</th></tr></thead>
-            <tbody>{data.map(u => (
-              <tr key={u.user_id}><td>#{u.user_id}</td><td><strong>{u.name}</strong></td><td>{u.phone||'—'}</td><td>{u.age||'—'}</td>
-                <td><span className={`badge ${u.gender==='Male'?'badge-blue':'badge-purple'}`}>{u.gender}</span></td>
-                <td>{u.email}</td><td>{getRole(u)}</td>
+            <tbody>{filtered.map((u,i) => (
+              <tr key={`${u._type}-${u.user_id}-${i}`}>
+                <td>#{u.user_id}</td>
+                <td><strong>{u.name}</strong></td>
+                <td>{u.phone||'—'}</td>
+                <td>{u.age||'—'}</td>
+                <td>{u.gender && u.gender!=='—' ? <span className={`badge ${u.gender==='Male'?'badge-blue':'badge-purple'}`}>{u.gender}</span> : '—'}</td>
+                <td>{u.email}</td>
+                <td>{getRoleBadge(u)}</td>
                 <td style={{ display:'flex', gap:6 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => { setForm(u); setModal('edit') }}>✏️</button>
-                  <button className="btn btn-danger btn-sm" onClick={() => remove(u.user_id)}>🗑️</button>
-                </td></tr>
+                  {u._type !== 'doctor' && <button className="btn btn-ghost btn-sm" onClick={() => { setForm(u); setModal('edit') }}>✏️</button>}
+                  <button className="btn btn-danger btn-sm" onClick={() => remove(u)}>🗑️</button>
+                </td>
+              </tr>
             ))}</tbody>
           </table>
         )}
@@ -1335,13 +1377,13 @@ function AdminUsers({ showToast }) {
         <Modal title={modal==='add'?'➕ Add User':'✏️ Edit User'} onClose={() => setModal(null)}>
           <div className="form-row">
             <div className="form-group"><label className="form-label">Full Name</label><input className="form-input" value={form.name} onChange={e => setForm({...form,name:e.target.value})}/></div>
-            <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={form.phone} onChange={e => setForm({...form,phone:e.target.value})}/></div>
+            <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={form.phone||''} onChange={e => setForm({...form,phone:e.target.value})}/></div>
           </div>
           <div className="form-row">
-            <div className="form-group"><label className="form-label">Age</label><input className="form-input" type="number" value={form.age} onChange={e => setForm({...form,age:e.target.value})}/></div>
-            <div className="form-group"><label className="form-label">Gender</label><select className="form-input" value={form.gender} onChange={e => setForm({...form,gender:e.target.value})}><option>Male</option><option>Female</option><option>Other</option></select></div>
+            <div className="form-group"><label className="form-label">Age</label><input className="form-input" type="number" value={form.age||''} onChange={e => setForm({...form,age:e.target.value})}/></div>
+            <div className="form-group"><label className="form-label">Gender</label><select className="form-input" value={form.gender||'Male'} onChange={e => setForm({...form,gender:e.target.value})}><option>Male</option><option>Female</option><option>Other</option></select></div>
           </div>
-          <div className="form-group"><label className="form-label">Email</label><input className="form-input" value={form.email} onChange={e => setForm({...form,email:e.target.value})}/></div>
+          <div className="form-group"><label className="form-label">Email</label><input className="form-input" value={form.email||''} onChange={e => setForm({...form,email:e.target.value})}/></div>
           <div className="modal-footer"><button className="btn btn-ghost" onClick={() => setModal(null)}>Cancel</button><button className="btn btn-primary" onClick={save}>{modal==='add'?'Add':'Save'}</button></div>
         </Modal>
       )}
