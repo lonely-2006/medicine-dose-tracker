@@ -1319,7 +1319,7 @@ export default function App() {
   const pageTitle = pages.find(p => p.id===page)?.label || 'Dashboard'
 
   return (
-    <div style={{ display:'flex', minHeight:'100vh', background:'#f8fafc' }}>
+    <div style={{ display:'flex', minHeight:'100vh', background:'#f8fafc', paddingLeft:'var(--sidebar-width)' }}>
       <Sidebar pages={pages} page={page} setPage={setPage} user={user} profile={profile} />
       <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
         <Topbar title={pageTitle} onLogout={handleLogout} actionLabel={page==='dashboard'?'+ Add New':undefined} onAction={page==='dashboard'?() => showToast('Add new clicked'):undefined} />
