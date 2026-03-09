@@ -121,27 +121,30 @@ function AuthPage({ onLogin }) {
   }
 
   return (
-    <div style={{ minHeight:'100vh', display:'flex', alignItems:'stretch' }}>
-      <div style={{ flex:1, background:'linear-gradient(135deg, #0f1c2e 0%, #1a3a52 100%)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:40, color:'#fff' }}>
-        <div style={{ fontFamily:'Fraunces, serif', fontSize:48, fontWeight:700, marginBottom:12 }}>Medi<span style={{ color:'#f59e0b' }}>Track</span></div>
-        <div style={{ fontSize:16, color:'rgba(255,255,255,0.7)', marginBottom:32, textAlign:'center' }}>Manage your medicines, track your health, stay on schedule.</div>
-        <div style={{ width:'100%', maxWidth:320 }}>
-          <div style={{ fontSize:11, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'1.5px', fontWeight:600, marginBottom:10 }}>Login as</div>
-          <div style={{ display:'flex', gap:10 }}>
-            {roles.map(r => (
-              <button key={r.id} onClick={() => { setRole(r.id); setError(''); setSuccess('') }}
-                style={{ flex:1, padding:'12px 8px', borderRadius:12, border:`2px solid ${role===r.id?r.color:'#e2e8f0'}`, background:role===r.id?`${r.color}10`:'#f8fafc', color:role===r.id?r.color:'#94a3b8', fontWeight:role===r.id?700:500, fontSize:13, cursor:'pointer', fontFamily:'Plus Jakarta Sans, sans-serif', transition:'all 0.2s', display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
-                <span style={{ fontSize:20 }}>{r.icon}</span><span>{r.label}</span>
-              </button>
-            ))}
-          </div>
+    <div style={{ minHeight:'100vh', background:'linear-gradient(135deg, #0f1c2e 0%, #1a3a52 100%)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+      <div style={{ background:'#fff', borderRadius:20, padding:40, width:'100%', maxWidth:500, boxShadow:'0 24px 80px rgba(0,0,0,0.35)' }}>
+        {/* Header */}
+        <div style={{ textAlign:'center', marginBottom:28 }}>
+          <div style={{ fontFamily:'Fraunces, serif', fontSize:36, fontWeight:700, marginBottom:8, color:'#0f172a' }}>Medi<span style={{ color:'#f59e0b' }}>Track</span></div>
+          <div style={{ fontSize:13, color:'#94a3b8' }}>Healthcare Management System</div>
         </div>
-      </div>
-      <div style={{ flex:1, background:'#fff', padding:60, display:'flex', flexDirection:'column', justifyContent:'center' }}>
-        <div style={{ marginBottom:20 }}>
-          <div style={{ fontFamily:'Fraunces, serif', fontSize:22, fontWeight:700, color:'#0f172a' }}>{mode==='login'?`${activeRole.icon} ${activeRole.label} Login`:'📝 Create Account'}</div>
-          <div style={{ fontSize:13, color:'#94a3b8', marginTop:4 }}>{mode==='login'?`Sign in as ${activeRole.label}`:'Register as a new account'}</div>
+        
+        {/* Role Tabs */}
+        <div className="login-tabs">
+          {roles.map(r => (
+            <button 
+              key={r.id} 
+              className={`login-tab ${role===r.id?'active':''} ${role===r.id?r.id:''}`}
+              onClick={() => { setRole(r.id); setError(''); setSuccess('') }}
+              style={role===r.id ? { background: r.color } : {}}
+            >
+              <span className="login-tab-icon">{r.icon}</span>
+              <span>{r.label}</span>
+            </button>
+          ))}
         </div>
+        
+        {/* Mode Tabs */}
         <div style={{ display:'flex', background:'#f1f5f9', borderRadius:10, padding:4, marginBottom:20 }}>
           {['login','register'].map(m => (
             <button key={m} onClick={() => { setMode(m); setError(''); setSuccess('') }}
@@ -150,18 +153,33 @@ function AuthPage({ onLogin }) {
             </button>
           ))}
         </div>
+        
+        {/* Form Title */}
+        <div style={{ marginBottom:16 }}>
+          <div style={{ fontSize:14, fontWeight:600, color:'#0f172a' }}>{mode==='login'?`${activeRole.icon} ${activeRole.label} Login`:'Create Account'}</div>
+          <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>{mode==='login'?`Enter your ${activeRole.label.toLowerCase()} credentials`:`Register as a ${activeRole.label.toLowerCase()}`}</div>
+        </div>
+        
+        {/* Messages */}
         {error && <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#dc2626', marginBottom:16 }}>❌ {error}</div>}
         {success && <div style={{ background:'#ecfdf5', border:'1px solid #a7f3d0', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#059669', marginBottom:16 }}>✅ {success}</div>}
         {mode==='register' && role==='admin' && <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#d97706', marginBottom:16 }}>⚠️ Admin accounts cannot self-register.</div>}
+        
+        {/* Form Fields */}
         {mode==='register' && <div className="form-group"><label className="form-label">Full Name</label><input className="form-input" placeholder="John Doe" value={form.name} onChange={e => setForm({...form,name:e.target.value})}/></div>}
-        <div className="form-group"><label className="form-label">Email Address</label><input className="form-input" type="email" placeholder="you@example.com" value={form.email} onChange={e => setForm({...form,email:e.target.value})} onKeyDown={e => e.key==='Enter' && (mode==='login'?handleLogin():handleRegister())}/></div>
+        <div className="form-group"><label className="form-label">Email Address</label><input className="form-input" type="email" placeholder={activeRole.id==='doctor'?'doctor@hospital.com':'you@example.com'} value={form.email} onChange={e => setForm({...form,email:e.target.value})} onKeyDown={e => e.key==='Enter' && (mode==='login'?handleLogin():handleRegister())}/></div>
         <div className="form-group"><label className="form-label">Password</label><input className="form-input" type="password" placeholder="••••••••" value={form.password} onChange={e => setForm({...form,password:e.target.value})} onKeyDown={e => e.key==='Enter' && (mode==='login'?handleLogin():handleRegister())}/></div>
-        <button className="btn btn-primary" style={{ width:'100%', padding:'12px', marginTop:6, fontSize:14, justifyContent:'center', background:activeRole.color, borderColor:activeRole.color }} onClick={mode==='login'?handleLogin:handleRegister} disabled={loading}>
-          {loading?'⏳ Please wait...':mode==='login'?`${activeRole.icon} Sign in as ${activeRole.label}`:'📝 Create Account'}
+        
+        {/* Submit Button */}
+        <button className="btn btn-primary" style={{ width:'100%', padding:'12px', marginTop:6, fontSize:14, justifyContent:'center', background:activeRole.color, borderColor:activeRole.color, transition:'all 0.3s ease' }} onClick={mode==='login'?handleLogin:handleRegister} disabled={loading}>
+          <span style={{ marginRight:4 }}>{activeRole.icon}</span>
+          {loading?'⏳ Please wait...':mode==='login'?`Sign in as ${activeRole.label}`:'Create Account'}
         </button>
-        <div style={{ textAlign:'center', marginTop:18, fontSize:12.5, color:'#94a3b8' }}>
+        
+        {/* Toggle */}
+        <div style={{ textAlign:'center', marginTop:16, fontSize:12.5, color:'#94a3b8' }}>
           {mode==='login'?"Don't have an account? ":'Already have an account? '}
-          <span style={{ color:'#1a3c5e', cursor:'pointer', fontWeight:700 }} onClick={() => { setMode(mode==='login'?'register':'login'); setError(''); setSuccess('') }}>{mode==='login'?'Register here':'Login here'}</span>
+          <span style={{ color:'#1a3c5e', cursor:'pointer', fontWeight:700 }} onClick={() => { setMode(mode==='login'?'register':'login'); setError(''); setSuccess('') }}>{mode==='login'?'Register':'Login'}</span>
         </div>
       </div>
       <div style={{ fontSize:11, color:'rgba(255,255,255,0.25)', position:'fixed', bottom:20, right:20, zIndex:1 }}>Secured by Supabase Authentication</div>
@@ -209,11 +227,14 @@ function Sidebar({ pages, page, setPage, user, profile }) {
 }
 
 // ── TOPBAR ───────────────────────────────────────
-function Topbar({ title, onLogout }) {
+function Topbar({ title, onLogout, actionLabel, onAction }) {
   return (
     <div className="topbar">
       <div className="topbar-title">{title}</div>
       <div className="topbar-right">
+        {actionLabel && onAction && (
+          <button className="btn btn-primary btn-sm" style={{ marginRight:12 }} onClick={onAction}>{actionLabel}</button>
+        )}
         <div className="topbar-search">
           <span style={{ color:'#94a3b8', fontSize:14 }}>🔍</span>
           <input placeholder="Search..."/>
@@ -1298,10 +1319,10 @@ export default function App() {
   const pageTitle = pages.find(p => p.id===page)?.label || 'Dashboard'
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', background:'#f8fafc' }}>
+    <div style={{ display:'flex', minHeight:'100vh', background:'#f8fafc' }}>
       <Sidebar pages={pages} page={page} setPage={setPage} user={user} profile={profile} />
       <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
-        <Topbar title={pageTitle} onLogout={handleLogout} />
+        <Topbar title={pageTitle} onLogout={handleLogout} actionLabel={page==='dashboard'?'+ Add New':undefined} onAction={page==='dashboard'?() => showToast('Add new clicked'):undefined} />
         <main style={{ flex:1, padding:24, overflow:'auto' }}>
           {pageConfig[page]}
         </main>

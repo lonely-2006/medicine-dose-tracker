@@ -57,32 +57,20 @@ body {
 
 /* ══ SIDEBAR ═══════════════════════════════════ */
 .sidebar {
-  width: 100%;
-  min-height: auto;
-  height: auto;
+  width: var(--sidebar-width);
+  min-height: 100vh;
   background: var(--sidebar-bg);
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  position: sticky;
-  top: 0;
+  flex-direction: column;
+  position: fixed;
+  top: 0; left: 0;
   z-index: 100;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.15);
-  padding: 0 20px;
-  flex-wrap: wrap;
+  box-shadow: 4px 0 24px rgba(0,0,0,0.15);
 }
 
 .logo {
-  padding: 12px 0 12px 0;
-  border-bottom: none;
-  border-right: 1px solid rgba(255,255,255,0.08);
-  padding-right: 20px;
-  margin-right: 20px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  flex-shrink: 0;
+  padding: 24px 20px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 
 .logo-text {
@@ -108,43 +96,32 @@ body {
   line-height: 1;
 }
 
-.nav { 
-  flex: 1; 
-  padding: 0 12px; 
-  overflow-x: auto; 
-  display: flex; 
-  flex-direction: row; 
-  align-items: center; 
-  gap: 4px;
-  min-width: 0;
-}
+.nav { flex: 1; padding: 12px; overflow-y: auto; }
 
 .nav-section {
   font-size: 9px;
   color: rgba(255,255,255,0.28);
   text-transform: uppercase;
   letter-spacing: 1.4px;
-  padding: 0 10px;
+  padding: 16px 10px 6px;
   font-weight: 600;
-  display: none;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 10px;
+  padding: 10px 12px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 13.5px;
   color: rgba(255,255,255,0.6);
   transition: all 0.15s ease;
-  margin-bottom: 0;
+  margin-bottom: 2px;
   border: none;
   background: none;
-  width: auto;
-  white-space: nowrap;
-  text-align: center;
+  width: 100%;
+  text-align: left;
   font-family: 'Plus Jakarta Sans', sans-serif;
   font-weight: 500;
 }
@@ -166,18 +143,17 @@ body {
 .nav-icon { font-size: 15px; width: 20px; text-align: center; flex-shrink: 0; }
 
 .db-badge {
-  margin: 0 0 0 auto;
-  padding: 8px 14px;
+  margin: 12px;
+  padding: 12px 14px;
   background: rgba(255,255,255,0.07);
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: var(--radius-sm);
-  font-size: 12px;
+  font-size: 13px;
   color: rgba(255,255,255,0.85);
   font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 8px;
-  white-space: nowrap;
+  gap: 10px;
 }
 
 .db-badge-avatar {
@@ -189,9 +165,16 @@ body {
   flex-shrink: 0;
 }
 
-.db-badge-info { min-width: 0; flex: 0; }
+.db-badge-info { min-width: 0; flex: 1; }
 .db-badge-info span {
-  display: none;
+  display: block;
+  color: rgba(255,255,255,0.4);
+  font-size: 10.5px;
+  font-weight: 500;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ══ TOPBAR ════════════════════════════════════ */
@@ -941,5 +924,84 @@ tr:hover td { background: #f8fafc; }
   
   .profile-name {
     font-size: 18px;
+  }
+}
+
+/* ══ LOGIN TABS ══════════════════════════════════ */
+.login-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 28px;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 0;
+}
+
+.login-tab {
+  flex: 1;
+  padding: 14px 16px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-weight: 500;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  transition: all 0.3s ease;
+  border-bottom: 3px solid transparent;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.login-tab:hover {
+  color: #475569;
+}
+
+.login-tab.active {
+  color: #fff;
+  background: #1a3c5e;
+  border-bottom-color: #1a3c5e;
+  border-radius: 10px 10px 0 0;
+  font-weight: 600;
+}
+
+.login-tab.active.patient {
+  background: #2563eb;
+  border-bottom-color: #2563eb;
+}
+
+.login-tab.active.doctor {
+  background: #16a34a;
+  border-bottom-color: #16a34a;
+}
+
+.login-tab.active.admin {
+  background: #ea580c;
+  border-bottom-color: #ea580c;
+}
+
+.login-tab-icon {
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .login-tabs {
+    gap: 4px;
+    margin-bottom: 20px;
+  }
+  
+  .login-tab {
+    padding: 10px 8px;
+    font-size: 11px;
+  }
+  
+  .login-tab-icon {
+    font-size: 14px;
   }
 }
