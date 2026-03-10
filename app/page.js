@@ -592,11 +592,8 @@ function UserIntakeLogs({ showToast, profile }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data:scheds } = await supabase.from('schedule').select('schedule_id,dosage(medicine(name,prescription(user_id)))')
-    const mySchedIds = (scheds||[]).filter(s => s.dosage?.medicine?.prescription?.user_id===profile.user_id).map(s => s.schedule_id)
-    if (mySchedIds.length === 0) { setData([]); setLoading(false); return }
-    const { data:d, error } = await supabase.from('intake_log').select('log_id,schedule_id,date,time_taken,status').in('schedule_id', mySchedIds).order('log_id',{ ascending:false }).limit(50)
-    if (error) showToast(error.message,'error'); else setData(d)
+    const { data:d, error } = await supabase.from('intake_log').select('log_id,schedule_id,date,time_taken,status').order('log_id',{ ascending:false }).limit(100)
+    if (error) showToast(error.message,'error'); else setData(d||[])
     setLoading(false)
   }, [showToast, profile])
 
