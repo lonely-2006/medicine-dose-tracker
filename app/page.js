@@ -1,9 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { auditLog, auditActions } from '../lib/triggers/audit'
-import { sendNotification } from '../lib/triggers/notifications'
-import { scheduleReminder, markDoseAsTaken } from '../lib/triggers/reminders'
 
 function getInitials(name) {
   if (!name) return '?'
@@ -51,8 +48,6 @@ function AuthPage({ onLogin }) {
     if (role==='admin' && !profile?.is_admin) { await supabase.auth.signOut(); setError('This account is not an Admin account.'); setLoading(false); return }
     if (role==='doctor' && !profile?.is_doctor) { await supabase.auth.signOut(); setError('This account is not a Doctor account.'); setLoading(false); return }
     if (role==='patient' && (profile?.is_admin || profile?.is_doctor)) { await supabase.auth.signOut(); setError('Please select the correct role for this account.'); setLoading(false); return }
-    // AUDIT TRIGGER: Log user login
-    await auditLog(data.user.id, auditActions.USER_LOGIN, 'user', data.user.id, { email: form.email, role })
     onLogin(data.user, profile); setLoading(false)
   }
   const handleRegister = async () => {
@@ -62,8 +57,6 @@ function AuthPage({ onLogin }) {
     setLoading(true); setError('')
     const { data: authData, error: authError } = await supabase.auth.signUp({ email:form.email, password:form.password, options:{ data:{ name:form.name } } })
     if (authError) { setError(authError.message); setLoading(false); return }
-      // AUDIT TRIGGER: Log user registration
-      await auditLog(authData.user.id, auditActions.USER_REGISTER, 'user', authData.user.id, { name: form.name, email: form.email, role })
     if (authData?.user) {
       await supabase.from('users').insert({ auth_id: authData.user.id, name: form.name, email: form.email, is_admin: false, is_doctor: role==='doctor' })
     }
@@ -194,9 +187,6 @@ function UserDashboard({ showToast, profile }) {
     const timeTaken = status==='Taken'?`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`:null
     const { error } = await supabase.from('intake_log').insert({ schedule_id:scheduleId, date:today, time_taken:timeTaken, status })
     if (error) return showToast(error.message,'error')
-    // AUDIT TRIGGER: Log dose action
-    const schedDetail = scheds.find(s => s.schedule_id === scheduleId)
-    await auditLog(profile.user_id, auditActions.DOSE_LOGGED, 'schedule', scheduleId, { medicine: schedDetail?.dosage?.medicine?.name, dosage: schedDetail?.dosage?.amount, status })
     showToast(`Marked as ${status}!`); load()
   }
 
@@ -282,7 +272,7 @@ function UserMedicines({ showToast, profile }) {
 
   useEffect(() => { load() }, [load])
 
-  const saveMedicine = async () => {
+  const save = async () => {
     if (!form.name) return showToast('Enter medicine name', 'error')
     setSaving(true)
     const { error } = await supabase.from('medicine').insert({
@@ -290,8 +280,6 @@ function UserMedicines({ showToast, profile }) {
       status: 'Pending', added_by_user: true, prescription_id: null
     })
     if (error) { showToast(error.message, 'error'); setSaving(false); return }
-    // AUDIT TRIGGER: Log medicine added
-    await auditLog(profile.user_id, auditActions.PRESCRIPTION_CREATED, 'medicine', null, { name: form.name, brand: form.brand, type: form.type })
     showToast('Medicine submitted for approval! 🕐')
     setModal(false); setForm({ name:'', brand:'', type:'Tablet', description:'' }); setSaving(false); load()
   }
@@ -299,8 +287,6 @@ function UserMedicines({ showToast, profile }) {
   const remove = async (id) => {
     if (!confirm('Remove this medicine?')) return
     await supabase.from('medicine').delete().eq('medicine_id', id)
-    // AUDIT TRIGGER: Log medicine deleted
-    await auditLog(profile.user_id, auditActions.PRESCRIPTION_DELETED, 'medicine', id)
     showToast('Removed!'); load()
   }
 
@@ -370,7 +356,7 @@ function UserMedicines({ showToast, profile }) {
           </div>
           <div className="modal-footer">
             <button className="btn btn-ghost" onClick={() => setModal(false)}>Cancel</button>
-            <button className="btn btn-primary" onClick={saveMedicine} disabled={saving}>{saving?'⏳ Submitting...':'📨 Submit for Approval'}</button>
+            <button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'⏳ Submitting...':'📨 Submit for Approval'}</button>
           </div>
         </Modal>
       )}
@@ -440,10 +426,6 @@ function UserSchedule({ showToast, profile }) {
     setSaving(true)
     const { data:sched, error } = await supabase.from('schedule').insert({ dosage_id:parseInt(schedForm.dosage_id), start_date:schedForm.start_date, end_date:schedForm.end_date, time:schedForm.time+':00' }).select().single()
     if (error) { showToast(error.message,'error'); setSaving(false); return }
-    // AUDIT TRIGGER: Log schedule created
-    const dosage = dosages.find(d => d.dosage_id === parseInt(schedForm.dosage_id))
-    const medicine = medicines.find(m => m.medicine_id === dosage?.medicine_id)
-    await auditLog(profile.user_id, auditActions.PRESCRIPTION_CREATED, 'schedule', sched.schedule_id, { medicine: medicine?.name, dosage: dosage?.amount, time: schedForm.time })
     showToast('Schedule added! Want to set a reminder?')
     setModalSchedule(false); setModalReminder(sched.schedule_id); setSaving(false); load()
   }
@@ -452,8 +434,6 @@ function UserSchedule({ showToast, profile }) {
     setSaving(true)
     const { error } = await supabase.from('reminder').insert({ schedule_id:scheduleId, reminder_time:reminderForm.reminder_time, mode:reminderForm.mode, status:'Active' })
     if (error) { showToast(error.message,'error'); setSaving(false); return }
-    // AUDIT TRIGGER: Log reminder created
-    await auditLog(profile.user_id, auditActions.REMINDER_SET, 'schedule', scheduleId, { reminderTime: reminderForm.reminder_time, mode: reminderForm.mode })
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification('🔔 Reminder Set!', { body:`Reminder at ${reminderForm.reminder_time} · ${reminderForm.mode}`, icon:'/favicon.ico' })
     }
@@ -463,8 +443,6 @@ function UserSchedule({ showToast, profile }) {
   const deleteSchedule = async (id) => {
     if (!confirm('Delete this schedule?')) return
     await supabase.from('schedule').delete().eq('schedule_id', id)
-    // AUDIT TRIGGER: Log schedule deleted
-    await auditLog(profile.user_id, auditActions.PRESCRIPTION_DELETED, 'schedule', id)
     showToast('Deleted!'); load()
   }
 
@@ -703,8 +681,8 @@ function UserReminders({ showToast, profile }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data:scheds } = await supabase.from('schedule').select('schedule_id,dosage(amount,unit,frequency,medicine(name,prescription(user_id)))')
-    const myScheds = (scheds||[]).filter(s => s.dosage?.medicine?.prescription?.user_id===profile.user_id)
+    const { data:scheds } = await supabase.from('schedule').select('schedule_id,dosage(amount,unit,frequency,medicine(name,prescription(user_id),added_by_user))')
+    const myScheds = (scheds||[]).filter(s => { const m = s.dosage?.medicine; if (!m) return false; if (m.added_by_user) return true; return m.prescription?.user_id === profile.user_id })
     setSchedules(myScheds)
     const myIds = myScheds.map(s => s.schedule_id)
     if (myIds.length > 0) {
@@ -1000,7 +978,7 @@ function UserProfile({ showToast, profile, user }) {
                 <select className="form-input" value={lang} onChange={e => setLang(e.target.value)}><option>English</option><option>Hindi</option><option>Malayalam</option><option>Tamil</option></select>
               </div>
               <button className="btn btn-ghost" style={{ width:'100%', justifyContent:'center', marginBottom:10 }}>Save Settings</button>
-              <button className="btn btn-danger" style={{ width:'100%', justifyContent:'center', background:'#dc2626', color:'#fff', border:'none' }} onClick={async () => { await auditLog(profile.user_id, auditActions.USER_LOGOUT, 'user', profile.user_id); await supabase.auth.signOut(); window.location.reload() }}>Logout</button>
+              <button className="btn btn-danger" style={{ width:'100%', justifyContent:'center', background:'#dc2626', color:'#fff', border:'none' }} onClick={async () => { await supabase.auth.signOut(); window.location.reload() }}>Logout</button>
             </div>
           </div>
         </div>
@@ -1250,9 +1228,12 @@ function DoctorSchedules({ showToast, user }) {
 // ── ADMIN PAGES ──────────────────────────────────
 function AdminDashboard({ showToast }) {
   const [stats, setStats] = useState({})
+  const [scheds, setScheds] = useState([])
+  const [missed, setMissed] = useState([])
   const [loading, setLoading] = useState(true)
   const load = useCallback(async () => {
     setLoading(true)
+    const today = new Date().toISOString().split('T')[0]
     const [u,d,p,m] = await Promise.all([
       supabase.from('users').select('*',{ count:'exact', head:true }),
       supabase.from('doctor').select('*',{ count:'exact', head:true }),
@@ -1260,6 +1241,10 @@ function AdminDashboard({ showToast }) {
       supabase.from('medicine').select('*',{ count:'exact', head:true }),
     ])
     setStats({ users:u.count||0, doctors:d.count||0, prescriptions:p.count||0, medicines:m.count||0 })
+    const { data:sc } = await supabase.from('schedule').select('schedule_id,time,dosage(amount,unit,frequency,medicine(name))').lte('start_date',today).gte('end_date',today).limit(10)
+    setScheds(sc||[])
+    const { data:mi } = await supabase.from('intake_log').select('log_id,schedule_id,date,status').eq('status','Missed').order('date',{ ascending:false }).limit(5)
+    setMissed(mi||[])
     setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
@@ -1275,6 +1260,26 @@ function AdminDashboard({ showToast }) {
             <div className="stat-label">{c.label}</div><div className="stat-value">{loading?'—':c.value}</div>
           </div>
         ))}
+      </div>
+      <div className="dash-grid">
+        <div className="section-card">
+          <div className="section-header"><div><div className="section-title">📅 Today's Schedule</div></div></div>
+          {loading?<Loader/>:scheds.length===0?<Empty icon="📭" text="No schedules for today"/>:
+            scheds.map(s => (
+              <div key={s.schedule_id} className="schedule-item">
+                <div className="schedule-item-bar pending"></div>
+                <div className="schedule-time">{s.time?.slice(0,5)}</div>
+                <div className="schedule-info"><div className="schedule-name">{s.dosage?.medicine?.name||'—'}</div><div className="schedule-detail">{s.dosage?.amount} {s.dosage?.unit} · {s.dosage?.frequency}</div></div>
+              </div>
+            ))}
+        </div>
+        <div className="section-card">
+          <div className="section-header"><div><div className="section-title">⚠️ Missed Doses</div></div></div>
+          {loading?<Loader/>:missed.length===0?<Empty icon="✅" text="No missed doses!"/>:(
+            <table><thead><tr><th>Log ID</th><th>Schedule</th><th>Date</th></tr></thead>
+            <tbody>{missed.map(m => <tr key={m.log_id}><td>#{m.log_id}</td><td>SCH-{m.schedule_id}</td><td>{m.date}</td></tr>)}</tbody></table>
+          )}
+        </div>
       </div>
     </div>
   )
