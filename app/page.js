@@ -799,10 +799,7 @@ function UserStats({ showToast, profile }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data:scheds } = await supabase.from('schedule').select('schedule_id,dosage(medicine(name,prescription(user_id)))')
-    const myIds = (scheds||[]).filter(s=>s.dosage?.medicine?.prescription?.user_id===profile.user_id).map(s=>s.schedule_id)
-    if (myIds.length === 0) { setLoading(false); return }
-    const { data:d } = await supabase.from('intake_log').select('*').in('schedule_id', myIds).order('date', { ascending:false })
+    const { data:d } = await supabase.from('intake_log').select('*').order('date', { ascending:false })
     const allLogs = d||[]
     setLogs(allLogs.slice(0,20))
     const taken = allLogs.filter(l=>l.status==='Taken').length
