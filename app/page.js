@@ -585,6 +585,7 @@ function UserPrescriptions({ showToast, profile }) {
 
 function UserIntakeLogs({ showToast, profile }) {
   const [data, setData] = useState([])
+  const [schedules, setSchedules] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
   const today = new Date().toISOString().split('T')[0]
@@ -593,6 +594,11 @@ function UserIntakeLogs({ showToast, profile }) {
 
   const load = useCallback(async () => {
     setLoading(true)
+    // Load schedules for dropdown
+    const { data:scheds } = await supabase.from('schedule').select('schedule_id,time,dosage(amount,unit,medicine(name,prescription(user_id)))')
+    const myScheds = (scheds||[]).filter(s => s.dosage?.medicine?.prescription?.user_id === profile.user_id)
+    setSchedules(myScheds)
+    // Load logs
     const { data:d, error } = await supabase.from('intake_log').select('log_id,schedule_id,date,time_taken,status').order('log_id',{ ascending:false }).limit(100)
     if (error) showToast(error.message,'error'); else setData(d||[])
     setLoading(false)
@@ -600,8 +606,14 @@ function UserIntakeLogs({ showToast, profile }) {
 
   useEffect(() => { load() }, [load])
 
+  const getMedLabel = (sid) => {
+    const s = schedules.find(x => x.schedule_id === sid)
+    if (!s) return `SCH-${sid}`
+    return `${s.dosage?.medicine?.name} — ${s.dosage?.amount}${s.dosage?.unit} at ${(s.time||'').slice(0,5)}`
+  }
+
   const save = async () => {
-    if (!form.schedule_id) return showToast('Enter a schedule ID','error')
+    if (!form.schedule_id) return showToast('Please select a medicine','error')
     const { error } = await supabase.from('intake_log').insert({ schedule_id:parseInt(form.schedule_id), date:form.date, time_taken:form.status==='Taken'?(form.time_taken||null):null, status:form.status })
     if (error) return showToast(error.message,'error')
     showToast('Dose logged!'); setModal(false); load()
@@ -628,7 +640,7 @@ function UserIntakeLogs({ showToast, profile }) {
             <tbody>{filtered.map(l => (
               <tr key={l.log_id}>
                 <td><strong>#LOG-{String(l.log_id).padStart(3,'0')}</strong></td>
-                <td>SCH-{l.schedule_id}</td><td>{l.time_taken||'—'}</td><td>{l.date}</td>
+                <td>{getMedLabel(l.schedule_id)}</td><td>{l.time_taken||'—'}</td><td>{l.date}</td>
                 <td><span className={`badge ${statusBadge(l.status)}`}>{l.status}</span></td>
               </tr>
             ))}</tbody>
@@ -637,9 +649,20 @@ function UserIntakeLogs({ showToast, profile }) {
       </div>
       {modal && (
         <Modal title="📝 Log Dose" onClose={() => setModal(false)}>
+          <div className="form-group">
+            <label className="form-label">Medicine</label>
+            <select className="form-input" value={form.schedule_id} onChange={e => setForm({...form,schedule_id:e.target.value})}>
+              <option value="">-- Select your medicine --</option>
+              {schedules.map(s => (
+                <option key={s.schedule_id} value={s.schedule_id}>
+                  {s.dosage?.medicine?.name} — {s.dosage?.amount}{s.dosage?.unit} at {(s.time||'').slice(0,5)}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="form-row">
-            <div className="form-group"><label className="form-label">Schedule ID</label><input className="form-input" type="number" value={form.schedule_id} onChange={e => setForm({...form,schedule_id:e.target.value})} placeholder="1"/></div>
             <div className="form-group"><label className="form-label">Date</label><input className="form-input" type="date" value={form.date} onChange={e => setForm({...form,date:e.target.value})}/></div>
+            <div className="form-group"><label className="form-label">Time Taken</label><input className="form-input" type="time" value={form.time_taken} onChange={e => setForm({...form,time_taken:e.target.value})}/></div>
           </div>
           <div className="form-row">
             <div className="form-group"><label className="form-label">Time Taken</label><input className="form-input" type="time" value={form.time_taken} onChange={e => setForm({...form,time_taken:e.target.value})}/></div>
