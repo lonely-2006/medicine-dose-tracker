@@ -1884,6 +1884,37 @@ export default function App() {
   const handleLogout = async () => { await supabase.auth.signOut(); setUser(null); setProfile(null); setPage('dashboard') }
   const showToast    = useCallback((message, type='success') => setToast({ message, type }), [])
 
+  // ── REMINDER CHECKER ─────────────────────────────
+  useEffect(() => {
+    if (!user || !profile) return
+    const firedReminders = new Set()
+    const checkReminders = async () => {
+      if (Notification.permission !== 'granted') return
+      const now = new Date()
+      const currentTime = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
+      const today = now.toISOString().split('T')[0]
+      // Fetch reminders directly for this user
+      const { data:reminders } = await supabase.from('reminder').select('*').eq('status','Active')
+      if (!reminders || reminders.length === 0) return
+      reminders.forEach(r => {
+        const rTime = r.reminder_time?.slice(0,5)
+        const fireKey = `${today}_${r.reminder_id}`
+        if (rTime === currentTime && !firedReminders.has(fireKey)) {
+          firedReminders.add(fireKey)
+          new Notification('💊 MediTrack Reminder!', {
+            body: `Time to take your medicine\n${r.mode} reminder · ${rTime}`,
+            icon: '/favicon.ico',
+            requireInteraction: true
+          })
+        }
+      })
+    }
+    if (Notification.permission === 'default') Notification.requestPermission()
+    checkReminders()
+    const interval = setInterval(checkReminders, 30000)
+    return () => clearInterval(interval)
+  }, [user, profile])
+
   if (authLoading) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0f1c2e', flexDirection:'column', gap:16 }}>
       <div style={{ fontFamily:'Fraunces, serif', fontSize:32, fontWeight:700, color:'#fff' }}>Medi<span style={{ color:'#f59e0b' }}>Track</span></div>
