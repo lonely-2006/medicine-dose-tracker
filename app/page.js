@@ -58,7 +58,8 @@ function AuthPage({ onLogin }) {
     const { data: authData, error: authError } = await supabase.auth.signUp({ email:form.email, password:form.password, options:{ data:{ name:form.name } } })
     if (authError) { setError(authError.message); setLoading(false); return }
     if (authData?.user) {
-      await supabase.from('users').insert({ auth_id: authData.user.id, name: form.name, email: form.email, is_admin: false, is_doctor: role==='doctor' })
+      const insertResult = await supabase.from('users').insert({ auth_id: authData.user.id, name: form.name, email: form.email, is_admin: false, is_doctor: role==='doctor' })
+      if (role==='doctor') { await supabase.from('doctor').insert({ name: form.name, email: form.email, specialization: 'General Practitioner', phone: '' }) }
     }
     setSuccess('Account created! Please login now.')
     setLoading(false)
