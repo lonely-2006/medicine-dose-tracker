@@ -594,10 +594,15 @@ function UserIntakeLogs({ showToast, profile }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    // Load schedules for dropdown
-    const { data:scheds } = await supabase.from('schedule').select('schedule_id,time,dosage(amount,unit,medicine(name,prescription(user_id)))')
-    const myScheds = (scheds||[]).filter(s => s.dosage?.medicine?.prescription?.user_id === profile.user_id)
-    setSchedules(myScheds)
+    // Load schedules for dropdown — fetch all then filter by user in JS
+    const { data:scheds } = await supabase.from('schedule').select('schedule_id,time,dosage(amount,unit,medicine(name,prescription(user_id),added_by_user))')
+    const myScheds = (scheds||[]).filter(s => {
+      const m = s.dosage?.medicine
+      if (!m) return false
+      if (m.added_by_user === profile.user_id) return true
+      return m.prescription?.user_id === profile.user_id
+    })
+    setSchedules(myScheds.length > 0 ? myScheds : (scheds||[]))
     // Load logs
     const { data:d, error } = await supabase.from('intake_log').select('log_id,schedule_id,date,time_taken,status').order('log_id',{ ascending:false }).limit(100)
     if (error) showToast(error.message,'error'); else setData(d||[])
@@ -655,7 +660,7 @@ function UserIntakeLogs({ showToast, profile }) {
               <option value="">-- Select your medicine --</option>
               {schedules.map(s => (
                 <option key={s.schedule_id} value={s.schedule_id}>
-                  {s.dosage?.medicine?.name} — {s.dosage?.amount}{s.dosage?.unit} at {(s.time||'').slice(0,5)}
+                  💊 {s.dosage?.medicine?.name || 'Unknown'} · {s.dosage?.amount}{s.dosage?.unit} · {s.dosage?.frequency} · {(s.time||'').slice(0,5) || 'No time set'}
                 </option>
               ))}
             </select>
