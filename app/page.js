@@ -45,7 +45,24 @@ function AuthPage({ onLogin }) {
     const { data, error } = await supabase.auth.signInWithPassword({ email:form.email, password:form.password })
     if (error) { setError(error.message); setLoading(false); return }
     const { data:profile } = await supabase.from('users').select('*').eq('auth_id', data.user.id).single()
-    if (!profile) { await supabase.auth.signOut(); setError('Profile not found. Please register first.'); setLoading(false); return }
+
+    // If no profile found, try to create it (handles email-confirmed signups)
+    if (!profile) {
+      // Try inserting the profile now (user confirmed email)
+      const { data:newProfile, error:insertErr } = await supabase.from('users')
+        .insert({ auth_id: data.user.id, name: data.user.user_metadata?.name || form.email.split('@')[0], email: form.email, role: role })
+        .select().single()
+      if (insertErr || !newProfile) {
+        await supabase.auth.signOut()
+        setError('Profile not found. Please contact admin or re-register.')
+        setLoading(false); return
+      }
+      if (role === 'doctor') {
+        await supabase.from('doctor').upsert({ name: newProfile.name, email: form.email, specialization: 'General Practitioner', phone: '' }, { onConflict: 'email' })
+      }
+      onLogin(data.user, newProfile); setLoading(false); return
+    }
+
     if (profile.role !== role) { await supabase.auth.signOut(); setError(`This account is not a ${role.charAt(0).toUpperCase()+role.slice(1)} account.`); setLoading(false); return }
     onLogin(data.user, profile); setLoading(false)
   }
@@ -2041,4 +2058,5 @@ export default function App() {
     </div>
   )
 }
+
 
