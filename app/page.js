@@ -129,7 +129,12 @@ export default AuthPage
 // ── SIDEBAR / TOPBAR ─────────────────────────────
 function Sidebar({ pages, page, setPage, user, profile }) {
   const sections = [...new Set(pages.map(p => p.section))]
-  const roleLabel = profile?.is_admin?'Admin':profile?.is_doctor?'Doctor':'Patient'
+  const roleLabel =
+  profile?.role === 'admin'
+    ? 'Admin'
+    : profile?.role === 'doctor'
+    ? 'Doctor'
+    : 'Patient'
   return (
     <div className="sidebar">
       <div className="logo"><div className="logo-text">Medi<span>Track</span></div><div className="logo-sub">Dose Tracker System</div></div>
