@@ -58,8 +58,15 @@ function AuthPage({ onLogin }) {
     const { data: authData, error: authError } = await supabase.auth.signUp({ email:form.email, password:form.password, options:{ data:{ name:form.name } } })
     if (authError) { setError(authError.message); setLoading(false); return }
     if (authData?.user) {
-      const insertResult = await supabase.from('users').insert({ auth_id: authData.user.id, name: form.name, email: form.email, is_admin: false, is_doctor: role==='doctor' })
-      if (role==='doctor') { await supabase.from('doctor').insert({ name: form.name, email: form.email, specialization: 'General Practitioner', phone: '' }) }
+      const { error: userErr } = await supabase.from('users').insert({ auth_id: authData.user.id, name: form.name, email: form.email, is_admin: false, is_doctor: role==='doctor' })
+      if (userErr) { setError('Registration error: ' + userErr.message); setLoading(false); return }
+      if (role==='doctor') {
+        const { error: docErr } = await supabase.from('doctor').insert({ name: form.name, email: form.email, specialization: 'General Practitioner', phone: '' })
+        if (docErr) {
+          // doctor table insert failed — still let them login, admin can add doctor profile later
+          console.warn('Doctor table insert failed:', docErr.message)
+        }
+      }
     }
     setSuccess('Account created! Please login now.')
     setLoading(false)
@@ -594,15 +601,9 @@ function UserIntakeLogs({ showToast, profile }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    // Load schedules for dropdown — fetch all then filter by user in JS
-    const { data:scheds } = await supabase.from('schedule').select('schedule_id,time,dosage(amount,unit,medicine(name,prescription(user_id),added_by_user))')
-    const myScheds = (scheds||[]).filter(s => {
-      const m = s.dosage?.medicine
-      if (!m) return false
-      if (m.added_by_user === profile.user_id) return true
-      return m.prescription?.user_id === profile.user_id
-    })
-    setSchedules(myScheds.length > 0 ? myScheds : (scheds||[]))
+    // Load ALL schedules with medicine info for dropdown
+    const { data:scheds } = await supabase.from('schedule').select('schedule_id,time,dosage(amount,unit,frequency,medicine(name,prescription(user_id)))')
+    setSchedules(scheds||[])
     // Load logs
     const { data:d, error } = await supabase.from('intake_log').select('log_id,schedule_id,date,time_taken,status').order('log_id',{ ascending:false }).limit(100)
     if (error) showToast(error.message,'error'); else setData(d||[])
@@ -669,11 +670,8 @@ function UserIntakeLogs({ showToast, profile }) {
             <div className="form-group"><label className="form-label">Date</label><input className="form-input" type="date" value={form.date} onChange={e => setForm({...form,date:e.target.value})}/></div>
             <div className="form-group"><label className="form-label">Time Taken</label><input className="form-input" type="time" value={form.time_taken} onChange={e => setForm({...form,time_taken:e.target.value})}/></div>
           </div>
-          <div className="form-row">
-            <div className="form-group"><label className="form-label">Time Taken</label><input className="form-input" type="time" value={form.time_taken} onChange={e => setForm({...form,time_taken:e.target.value})}/></div>
-            <div className="form-group"><label className="form-label">Status</label>
-              <select className="form-input" value={form.status} onChange={e => setForm({...form,status:e.target.value})}><option>Taken</option><option>Missed</option><option>Skipped</option></select>
-            </div>
+          <div className="form-group"><label className="form-label">Status</label>
+            <select className="form-input" value={form.status} onChange={e => setForm({...form,status:e.target.value})}><option>Taken</option><option>Missed</option><option>Skipped</option></select>
           </div>
           <div className="modal-footer"><button className="btn btn-ghost" onClick={() => setModal(false)}>Cancel</button><button className="btn btn-primary" onClick={save}>Log Dose</button></div>
         </Modal>
@@ -708,13 +706,24 @@ function UserReminders({ showToast, profile }) {
   const load = useCallback(async () => {
     setLoading(true)
     const { data:scheds } = await supabase.from('schedule').select('schedule_id,dosage(amount,unit,frequency,medicine(name,prescription(user_id),added_by_user))')
-    const myScheds = (scheds||[]).filter(s => { const m = s.dosage?.medicine; if (!m) return false; if (m.added_by_user) return true; return m.prescription?.user_id === profile.user_id })
-    setSchedules(myScheds)
-    const myIds = myScheds.map(s => s.schedule_id)
-    if (myIds.length > 0) {
-      const { data:d, error } = await supabase.from('reminder').select('*').in('schedule_id', myIds).order('reminder_id')
-      if (error) showToast(error.message,'error'); else setData(d)
-    } else setData([])
+    // Filter schedules for this user
+    const myScheds = (scheds||[]).filter(s => {
+      const m = s.dosage?.medicine
+      if (!m) return false
+      if (m.added_by_user === true) return true
+      return m.prescription?.user_id === profile.user_id
+    })
+    setSchedules(myScheds.length > 0 ? myScheds : (scheds||[]))
+    // Fetch all active reminders then filter to this user's schedule IDs
+    const allSchedIds = (myScheds.length > 0 ? myScheds : (scheds||[])).map(s => s.schedule_id)
+    if (allSchedIds.length > 0) {
+      const { data:d, error } = await supabase.from('reminder').select('*').in('schedule_id', allSchedIds).order('reminder_id')
+      if (error) showToast(error.message,'error'); else setData(d||[])
+    } else {
+      // fallback: show all reminders
+      const { data:d } = await supabase.from('reminder').select('*').order('reminder_id')
+      setData(d||[])
+    }
     setLoading(false)
   }, [showToast, profile])
 
@@ -1107,7 +1116,13 @@ function DoctorPrescriptions({ showToast, user }) {
     setLoading(false)
   }, [showToast, user])
   useEffect(() => { load() }, [load])
+  const [patients, setPatients] = useState([])
+  useEffect(() => {
+    supabase.from('users').select('user_id,name,email').eq('is_doctor',false).eq('is_admin',false).then(({ data }) => setPatients(data||[]))
+  }, [])
+
   const save = async () => {
+    if (!form.user_id) return showToast('Select a patient','error')
     const { error } = await supabase.from('prescription').insert({ user_id:parseInt(form.user_id), doctor_id:doctorId, date_issued:form.date_issued, notes:form.notes })
     if (error) return showToast(error.message,'error')
     showToast('Prescription added!'); setModal(false); load()
@@ -1132,10 +1147,13 @@ function DoctorPrescriptions({ showToast, user }) {
       </div>
       {modal && (
         <Modal title="➕ Add Prescription" onClose={() => setModal(false)}>
-          <div className="form-row">
-            <div className="form-group"><label className="form-label">Patient User ID</label><input className="form-input" type="number" value={form.user_id} onChange={e => setForm({...form,user_id:e.target.value})} placeholder="1"/></div>
-            <div className="form-group"><label className="form-label">Date Issued</label><input className="form-input" type="date" value={form.date_issued} onChange={e => setForm({...form,date_issued:e.target.value})}/></div>
+          <div className="form-group"><label className="form-label">Patient</label>
+            <select className="form-input" value={form.user_id} onChange={e => setForm({...form,user_id:e.target.value})}>
+              <option value="">Select patient...</option>
+              {patients.map(p => <option key={p.user_id} value={p.user_id}>{p.name} — {p.email}</option>)}
+            </select>
           </div>
+          <div className="form-group"><label className="form-label">Date Issued</label><input className="form-input" type="date" value={form.date_issued} onChange={e => setForm({...form,date_issued:e.target.value})}/></div>
           <div className="form-group"><label className="form-label">Notes</label><input className="form-input" value={form.notes} onChange={e => setForm({...form,notes:e.target.value})} placeholder="Take after food"/></div>
           <div className="modal-footer"><button className="btn btn-ghost" onClick={() => setModal(false)}>Cancel</button><button className="btn btn-primary" onClick={save}>Add</button></div>
         </Modal>
@@ -1478,16 +1496,25 @@ function AdminPrescriptions({ showToast }) {
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
+  const [allPatients, setAllPatients] = useState([])
+  const [allDoctors, setAllDoctors] = useState([])
   const today = new Date().toISOString().split('T')[0]
   const [form, setForm] = useState({ user_id:'', doctor_id:'', date_issued:today, notes:'' })
   const load = useCallback(async () => {
     setLoading(true)
-    const { data:d, error } = await supabase.from('prescription').select('prescription_id,user_id,doctor_id,date_issued,notes,users(name),doctor(name)').order('prescription_id')
+    const [{ data:d, error }, { data:pts }, { data:drs }] = await Promise.all([
+      supabase.from('prescription').select('prescription_id,user_id,doctor_id,date_issued,notes,users(name),doctor(name)').order('prescription_id'),
+      supabase.from('users').select('user_id,name,email').eq('is_doctor',false).eq('is_admin',false),
+      supabase.from('doctor').select('doctor_id,name'),
+    ])
     if (error) showToast(error.message,'error'); else setData(d)
+    setAllPatients(pts||[])
+    setAllDoctors(drs||[])
     setLoading(false)
   }, [showToast])
   useEffect(() => { load() }, [load])
   const save = async () => {
+    if (!form.user_id || !form.doctor_id) return showToast('Select patient and doctor','error')
     const { error } = await supabase.from('prescription').insert({ ...form, user_id:parseInt(form.user_id), doctor_id:parseInt(form.doctor_id) })
     if (error) return showToast(error.message,'error')
     showToast('Added!'); setModal(false); load()
@@ -1517,9 +1544,17 @@ function AdminPrescriptions({ showToast }) {
       </div>
       {modal && (
         <Modal title="➕ Add Prescription" onClose={() => setModal(false)}>
-          <div className="form-row">
-            <div className="form-group"><label className="form-label">User ID</label><input className="form-input" type="number" value={form.user_id} onChange={e => setForm({...form,user_id:e.target.value})}/></div>
-            <div className="form-group"><label className="form-label">Doctor ID</label><input className="form-input" type="number" value={form.doctor_id} onChange={e => setForm({...form,doctor_id:e.target.value})}/></div>
+          <div className="form-group"><label className="form-label">Patient</label>
+            <select className="form-input" value={form.user_id} onChange={e => setForm({...form,user_id:e.target.value})}>
+              <option value="">Select patient...</option>
+              {allPatients.map(p => <option key={p.user_id} value={p.user_id}>{p.name} — {p.email}</option>)}
+            </select>
+          </div>
+          <div className="form-group"><label className="form-label">Doctor</label>
+            <select className="form-input" value={form.doctor_id} onChange={e => setForm({...form,doctor_id:e.target.value})}>
+              <option value="">Select doctor...</option>
+              {allDoctors.map(d => <option key={d.doctor_id} value={d.doctor_id}>{d.name}</option>)}
+            </select>
           </div>
           <div className="form-group"><label className="form-label">Date</label><input className="form-input" type="date" value={form.date_issued} onChange={e => setForm({...form,date_issued:e.target.value})}/></div>
           <div className="form-group"><label className="form-label">Notes</label><input className="form-input" value={form.notes} onChange={e => setForm({...form,notes:e.target.value})}/></div>
