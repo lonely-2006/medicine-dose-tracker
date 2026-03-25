@@ -124,8 +124,6 @@ function AuthPage({ onLogin }) {
     </div>
   )
 }
-
-export default AuthPage
 // ── SIDEBAR / TOPBAR ─────────────────────────────
 function Sidebar({ pages, page, setPage, user, profile }) {
   const sections = [...new Set(pages.map(p => p.section))]
