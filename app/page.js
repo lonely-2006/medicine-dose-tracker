@@ -1997,8 +1997,8 @@ export default function App() {
 
   if (!user) return <AuthPage onLogin={handleLogin} />
 
-  const isAdmin  = profile?.is_admin
-  const isDoctor = profile?.is_doctor
+  const isAdmin  = profile?.role === 'admin'
+  const isDoctor = profile?.role === 'doctor'
   const pages    = isAdmin?ADMIN_PAGES:isDoctor?DOCTOR_PAGES:USER_PAGES
   const props    = { showToast, user, profile }
 
