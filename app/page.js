@@ -50,7 +50,7 @@ function AuthPage({ onLogin }) {
     if (!profile) {
       // Try inserting the profile now (user confirmed email)
       const { data:newProfile, error:insertErr } = await supabase.from('users')
-        .insert({ auth_id: data.user.id, name: data.user.user_metadata?.name || form.email.split('@')[0], email: form.email, role: role })
+        .insert({ auth_id: data.user.id, name: data.user.user_metadata?.name || form.email.split('@')[0], email: form.email, role: role, is_admin: false, is_doctor: role === 'doctor' })
         .select().single()
       if (insertErr || !newProfile) {
         await supabase.auth.signOut()
@@ -63,7 +63,13 @@ function AuthPage({ onLogin }) {
       onLogin(data.user, newProfile); setLoading(false); return
     }
 
-    if (profile.role !== role) { await supabase.auth.signOut(); setError(`This account is not a ${role.charAt(0).toUpperCase()+role.slice(1)} account.`); setLoading(false); return }
+    // Check role using role column OR is_admin/is_doctor booleans
+    const profileIsAdmin  = profile.role === 'admin'  || profile.is_admin === true
+    const profileIsDoctor = profile.role === 'doctor' || profile.is_doctor === true
+    const profileIsPatient = !profileIsAdmin && !profileIsDoctor
+    if (role === 'admin'  && !profileIsAdmin)  { await supabase.auth.signOut(); setError('This account is not an Admin account.');   setLoading(false); return }
+    if (role === 'doctor' && !profileIsDoctor) { await supabase.auth.signOut(); setError('This account is not a Doctor account.');   setLoading(false); return }
+    if (role === 'patient'&& !profileIsPatient){ await supabase.auth.signOut(); setError('Please select the correct role.');          setLoading(false); return }
     onLogin(data.user, profile); setLoading(false)
   }
   const handleRegister = async () => {
@@ -74,15 +80,21 @@ function AuthPage({ onLogin }) {
     const { data: authData, error: authError } = await supabase.auth.signUp({ email:form.email, password:form.password, options:{ data:{ name:form.name } } })
     if (authError) { setError(authError.message); setLoading(false); return }
     if (authData?.user) {
-      const { error: userErr } = await supabase.from('users').insert({ auth_id: authData.user.id, name: form.name, email: form.email, role: role })
-      if (userErr) { setError('Registration error: ' + userErr.message); setLoading(false); return }
+      const { error: userErr } = await supabase.from('users').insert({
+        auth_id: authData.user.id,
+        name: form.name,
+        email: form.email,
+        role: role,
+        is_admin: false,
+        is_doctor: role === 'doctor'
+      })
+      if (userErr) { setError('Users insert failed: ' + userErr.message); setLoading(false); return }
       if (role==='doctor') {
         const { error: docErr } = await supabase.from('doctor').insert({ name: form.name, email: form.email, specialization: 'General Practitioner', phone: '' })
-        if (docErr) {
-          // doctor table insert failed — still let them login, admin can add doctor profile later
-          console.warn('Doctor table insert failed:', docErr.message)
-        }
+        if (docErr) { setError('Doctor insert failed: ' + docErr.message); setLoading(false); return }
       }
+    } else {
+      setError('Auth signup did not return a user. Check if email confirmation is required in Supabase.'); setLoading(false); return
     }
     setSuccess('Account created! Please login now.')
     setLoading(false)
@@ -2003,8 +2015,8 @@ export default function App() {
 
   if (!user) return <AuthPage onLogin={handleLogin} />
 
-  const isAdmin  = profile?.role === 'admin'
-  const isDoctor = profile?.role === 'doctor'
+  const isAdmin  = profile?.role === 'admin'  || profile?.is_admin  === true
+  const isDoctor = profile?.role === 'doctor' || profile?.is_doctor === true
   const pages    = isAdmin?ADMIN_PAGES:isDoctor?DOCTOR_PAGES:USER_PAGES
   const props    = { showToast, user, profile }
 
@@ -2058,5 +2070,3 @@ export default function App() {
     </div>
   )
 }
-
-
