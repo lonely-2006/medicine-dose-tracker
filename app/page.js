@@ -202,17 +202,43 @@ function UserDashboard({ showToast, profile }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    // Fetch all schedules then filter by user's prescriptions in JS
-    const { data:allScheds } = await supabase.from('schedule')
-      .select('schedule_id,start_date,end_date,time,dosage(dosage_id,amount,unit,frequency,medicine(medicine_id,name,prescription(user_id)))')
-      .order('time')
-    // Match schedules belonging to this user via prescription
-    const myScheds = (allScheds||[]).filter(s => s.dosage?.medicine?.prescription?.user_id === profile.user_id)
-    const todayScheds = myScheds.filter(s => s.start_date <= today && s.end_date >= today)
+    if (!profile?.user_id) { setLoading(false); return }
+    // Step 1: Get this user's prescription IDs
+    const { data:prescriptions } = await supabase.from('prescription')
+      .select('prescription_id').eq('user_id', profile.user_id)
+    const prescIds = (prescriptions||[]).map(p => p.prescription_id)
+
+    // Step 2: Get medicines for those prescriptions
+    let mySchedIds = []
+    let myScheds = []
+    let todayScheds = []
+
+    if (prescIds.length > 0) {
+      const { data:meds } = await supabase.from('medicine')
+        .select('medicine_id').in('prescription_id', prescIds)
+      const medIds = (meds||[]).map(m => m.medicine_id)
+
+      if (medIds.length > 0) {
+        // Step 3: Get dosages for those medicines
+        const { data:dosages } = await supabase.from('dosage')
+          .select('dosage_id').in('medicine_id', medIds)
+        const dosageIds = (dosages||[]).map(d => d.dosage_id)
+
+        if (dosageIds.length > 0) {
+          // Step 4: Get schedules for those dosages
+          const { data:allScheds } = await supabase.from('schedule')
+            .select('schedule_id,start_date,end_date,time,dosage(amount,unit,frequency,medicine(name))')
+            .in('dosage_id', dosageIds)
+            .order('time')
+          myScheds = allScheds||[]
+          mySchedIds = myScheds.map(s => s.schedule_id)
+          todayScheds = myScheds.filter(s => s.start_date <= today && s.end_date >= today)
+        }
+      }
+    }
     setScheds(todayScheds)
 
-    // Fetch today's logs for this user's schedules
-    const mySchedIds = myScheds.map(s => s.schedule_id)
+    // Step 5: Get today's logs
     let myLogs = []
     if (mySchedIds.length > 0) {
       const { data:logs } = await supabase.from('intake_log')
@@ -223,7 +249,7 @@ function UserDashboard({ showToast, profile }) {
     const missed = myLogs.filter(l=>l.status==='Missed').length
     const adherence = (taken+missed)>0 ? Math.round((taken/(taken+missed))*100) : 0
 
-    // Fetch this user's active reminders only
+    // Step 6: Get reminders
     let myReminders = []
     if (mySchedIds.length > 0) {
       const { data:rems } = await supabase.from('reminder')
@@ -322,15 +348,25 @@ function UserMedicines({ showToast, profile }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data:prescribed } = await supabase.from('medicine')
-      .select('medicine_id,name,brand,type,description,status,added_by_user,prescription_id,prescription!inner(user_id)')
-      .eq('prescription.user_id', profile.user_id)
-    const { data:selfAdded } = await supabase.from('medicine')
-      .select('medicine_id,name,brand,type,description,status,added_by_user,prescription_id')
-      .eq('added_by_user', true)
-      .is('prescription_id', null)
-    const all = [...(prescribed||[]), ...(selfAdded||[])]
-    const unique = [...new Map(all.map(m => [m.medicine_id, m])).values()]
+    // Step 1: get this user's prescription IDs
+    const { data:presc } = await supabase.from('prescription')
+      .select('prescription_id').eq('user_id', profile.user_id)
+    const prescIds = (presc||[]).map(p => p.prescription_id)
+
+    // Step 2: get medicines linked to those prescriptions
+    let prescribed = []
+    if (prescIds.length > 0) {
+      const { data:pm } = await supabase.from('medicine')
+        .select('medicine_id,name,brand,type,description,status,added_by_user,prescription_id')
+        .in('prescription_id', prescIds)
+      prescribed = pm||[]
+    }
+
+    // Step 3: get medicines self-added by THIS user (no prescription, added_by_user=true)
+    // We track self-added by checking added_by_user_id column or just show none for new users
+    // Only show self-added if they belong to this user's prescriptions or were added standalone
+    // For safety, only show prescribed ones for now
+    const unique = [...new Map(prescribed.map(m => [m.medicine_id, m])).values()]
     setData(unique)
     setLoading(false)
   }, [profile])
@@ -445,32 +481,31 @@ function UserSchedule({ showToast, profile }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data:prescribed } = await supabase.from('medicine')
-      .select('medicine_id,name,prescription!inner(user_id)')
-      .eq('prescription.user_id', profile.user_id)
-      .or('status.eq.Active,status.is.null')
-    const { data:selfAdded } = await supabase.from('medicine')
-      .select('medicine_id,name')
-      .eq('added_by_user', true).eq('status', 'Active').is('prescription_id', null)
-    const allMeds = [...(prescribed||[]).map(m=>({medicine_id:m.medicine_id,name:m.name})), ...(selfAdded||[])]
-    const uniqueMeds = [...new Map(allMeds.map(m=>[m.medicine_id,m])).values()]
+    // Get only this user's medicines via prescriptions
+    const { data:userPresc } = await supabase.from('prescription')
+      .select('prescription_id').eq('user_id', profile.user_id)
+    const userPrescIds = (userPresc||[]).map(p => p.prescription_id)
+    let uniqueMeds = []
+    if (userPrescIds.length > 0) {
+      const { data:pm } = await supabase.from('medicine')
+        .select('medicine_id,name')
+        .in('prescription_id', userPrescIds)
+        .or('status.eq.Active,status.is.null')
+      uniqueMeds = pm||[]
+    }
     setMedicines(uniqueMeds)
     if (uniqueMeds.length > 0) {
       const medIds = uniqueMeds.map(m => m.medicine_id)
       const { data:dos } = await supabase.from('dosage').select('*').in('medicine_id', medIds)
       setDosages(dos||[])
     }
+    // Fetch schedules via prescription chain
     const { data:d, error } = await supabase.from('schedule')
-      .select('schedule_id,start_date,end_date,time,dosage(dosage_id,amount,unit,frequency,medicine(name,prescription(user_id),added_by_user,status))')
+      .select('schedule_id,start_date,end_date,time,dosage(dosage_id,amount,unit,frequency,medicine(name,prescription(user_id)))')
       .order('schedule_id')
     if (error) showToast(error.message,'error')
     else {
-      const mine = d.filter(s => {
-        const m = s.dosage?.medicine
-        if (!m) return false
-        if (m.added_by_user) return true
-        return m.prescription?.user_id === profile.user_id
-      })
+      const mine = (d||[]).filter(s => Number(s.dosage?.medicine?.prescription?.user_id) === Number(profile.user_id))
       setSchedules(mine)
     }
     setLoading(false)
@@ -764,22 +799,14 @@ function UserReminders({ showToast, profile }) {
     setLoading(true)
     const { data:scheds } = await supabase.from('schedule').select('schedule_id,dosage(amount,unit,frequency,medicine(name,prescription(user_id),added_by_user))')
     // Filter schedules for this user
-    const myScheds = (scheds||[]).filter(s => {
-      const m = s.dosage?.medicine
-      if (!m) return false
-      if (m.added_by_user === true) return true
-      return m.prescription?.user_id === profile.user_id
-    })
-    setSchedules(myScheds.length > 0 ? myScheds : (scheds||[]))
-    // Fetch all active reminders then filter to this user's schedule IDs
-    const allSchedIds = (myScheds.length > 0 ? myScheds : (scheds||[])).map(s => s.schedule_id)
-    if (allSchedIds.length > 0) {
-      const { data:d, error } = await supabase.from('reminder').select('*').in('schedule_id', allSchedIds).order('reminder_id')
+    const myScheds = (scheds||[]).filter(s => Number(s.dosage?.medicine?.prescription?.user_id) === Number(profile.user_id))
+    setSchedules(myScheds)
+    if (myScheds.length > 0) {
+      const mySchedIds = myScheds.map(s => s.schedule_id)
+      const { data:d, error } = await supabase.from('reminder').select('*').in('schedule_id', mySchedIds).order('reminder_id')
       if (error) showToast(error.message,'error'); else setData(d||[])
     } else {
-      // fallback: show all reminders
-      const { data:d } = await supabase.from('reminder').select('*').order('reminder_id')
-      setData(d||[])
+      setData([])
     }
     setLoading(false)
   }, [showToast, profile])
