@@ -196,22 +196,42 @@ function UserDashboard({ showToast, profile }) {
   const [scheds, setScheds] = useState([])
   const [reminders, setReminders] = useState([])
   const [stats, setStats] = useState({})
+  const [todayLogs, setTodayLogs] = useState([])
   const [loading, setLoading] = useState(true)
   const today = new Date().toISOString().split('T')[0]
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data:d } = await supabase.from('schedule').select('schedule_id,start_date,end_date,time,dosage(amount,unit,frequency,medicine(name,prescription(user_id)))').order('time')
-    const myScheds = (d||[]).filter(s => s.dosage?.medicine?.prescription?.user_id===profile.user_id)
-    const todayScheds = myScheds.filter(s => s.start_date<=today && s.end_date>=today)
+    // Fetch all schedules then filter by user's prescriptions in JS
+    const { data:allScheds } = await supabase.from('schedule')
+      .select('schedule_id,start_date,end_date,time,dosage(dosage_id,amount,unit,frequency,medicine(medicine_id,name,prescription(user_id)))')
+      .order('time')
+    // Match schedules belonging to this user via prescription
+    const myScheds = (allScheds||[]).filter(s => s.dosage?.medicine?.prescription?.user_id === profile.user_id)
+    const todayScheds = myScheds.filter(s => s.start_date <= today && s.end_date >= today)
     setScheds(todayScheds)
-    const { data:r } = await supabase.from('reminder').select('*').eq('status','Active').limit(5)
-    setReminders(r||[])
-    const { data:logs } = await supabase.from('intake_log').select('status,schedule_id').gte('date',today)
-    const myLogs = (logs||[]).filter(l => todayScheds.some(s => s.schedule_id===l.schedule_id))
+
+    // Fetch today's logs for this user's schedules
+    const mySchedIds = myScheds.map(s => s.schedule_id)
+    let myLogs = []
+    if (mySchedIds.length > 0) {
+      const { data:logs } = await supabase.from('intake_log')
+        .select('status,schedule_id').eq('date', today).in('schedule_id', mySchedIds)
+      myLogs = logs||[]
+    }
     const taken = myLogs.filter(l=>l.status==='Taken').length
     const missed = myLogs.filter(l=>l.status==='Missed').length
-    const adherence = (taken+missed)>0?Math.round((taken/(taken+missed))*100):89
+    const adherence = (taken+missed)>0 ? Math.round((taken/(taken+missed))*100) : 0
+
+    // Fetch this user's active reminders only
+    let myReminders = []
+    if (mySchedIds.length > 0) {
+      const { data:rems } = await supabase.from('reminder')
+        .select('*').eq('status','Active').in('schedule_id', mySchedIds).limit(5)
+      myReminders = rems||[]
+    }
+    setReminders(myReminders)
+    setTodayLogs(myLogs)
     setStats({ todayDoses:todayScheds.length, taken, missed, active:myScheds.length, adherence })
     setLoading(false)
   }, [profile, today])
@@ -252,20 +272,29 @@ function UserDashboard({ showToast, profile }) {
             <button className="btn btn-ghost btn-sm" onClick={load}>↻ Refresh</button>
           </div>
           {loading?<Loader/>:scheds.length===0?<Empty icon="🎉" text="No medicines scheduled today!"/>:
-            scheds.map(s => (
-              <div key={s.schedule_id} className="schedule-item">
-                <div className="schedule-item-bar pending"></div>
-                <div className="schedule-time">{s.time?.slice(0,5)}</div>
-                <div className="schedule-info">
-                  <div className="schedule-name">{s.dosage?.medicine?.name}</div>
-                  <div className="schedule-detail">{s.dosage?.amount} {s.dosage?.unit} · {s.dosage?.frequency}</div>
+            scheds.map(s => {
+              const log = todayLogs.find(l => l.schedule_id === s.schedule_id)
+              const isTaken = log?.status === 'Taken'
+              const isMissed = log?.status === 'Missed'
+              return (
+                <div key={s.schedule_id} className="schedule-item" style={{ opacity: isTaken ? 0.7 : 1 }}>
+                  <div className={`schedule-item-bar ${isTaken?'taken':isMissed?'missed':'pending'}`}></div>
+                  <div className="schedule-time">{s.time?.slice(0,5)}</div>
+                  <div className="schedule-info">
+                    <div className="schedule-name">{s.dosage?.medicine?.name}</div>
+                    <div className="schedule-detail">{s.dosage?.amount} {s.dosage?.unit} · {s.dosage?.frequency}</div>
+                  </div>
+                  {log ? (
+                    <span className={`badge ${isTaken?'badge-green':'badge-red'}`}>{isTaken?'✓ Taken':'✗ Missed'}</span>
+                  ) : (
+                    <div style={{ display:'flex', gap:6 }}>
+                      <button className="btn btn-sm" style={{ background:'#dcfce7', color:'#16a34a', border:'none', borderRadius:8, padding:'4px 10px', cursor:'pointer', fontSize:12, fontWeight:600 }} onClick={() => logDose(s.schedule_id,'Taken')}>✓ Taken</button>
+                      <button className="btn btn-sm" style={{ background:'#fef2f2', color:'#dc2626', border:'none', borderRadius:8, padding:'4px 10px', cursor:'pointer', fontSize:12, fontWeight:600 }} onClick={() => logDose(s.schedule_id,'Missed')}>✗ Missed</button>
+                    </div>
+                  )}
                 </div>
-                <div style={{ display:'flex', gap:6 }}>
-                  <button className="btn btn-sm" style={{ background:'#dcfce7', color:'#16a34a', border:'none', borderRadius:8, padding:'4px 10px', cursor:'pointer', fontSize:12, fontWeight:600 }} onClick={() => logDose(s.schedule_id,'Taken')}>✓ Taken</button>
-                  <button className="btn btn-sm" style={{ background:'#fef2f2', color:'#dc2626', border:'none', borderRadius:8, padding:'4px 10px', cursor:'pointer', fontSize:12, fontWeight:600 }} onClick={() => logDose(s.schedule_id,'Missed')}>✗ Missed</button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
         </div>
         <div className="section-card">
           <div className="section-header"><div><div className="section-title">🔔 Active Reminders</div><div className="section-subtitle">Your upcoming reminders</div></div></div>
@@ -1194,62 +1223,143 @@ function DoctorMedicines({ showToast, user }) {
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
+  const [scheduleModal, setScheduleModal] = useState(null) // holds medicine object
   const [prescriptions, setPrescriptions] = useState([])
+  const [saving, setSaving] = useState(false)
+  const today = new Date().toISOString().split('T')[0]
   const [form, setForm] = useState({ name:'', brand:'', type:'Tablet', description:'', prescription_id:'' })
+  const [schedForm, setSchedForm] = useState({ amount:'1', unit:'tablet', frequency:'Once daily', start_date:today, end_date:'', time:'08:00' })
+
   const load = useCallback(async () => {
     setLoading(true)
     const { data:dr } = await supabase.from('doctor').select('doctor_id').eq('email',user.email).single()
     if (!dr) { setLoading(false); return }
-    const { data:d, error } = await supabase.from('medicine').select('medicine_id,name,brand,type,description,prescription_id,prescription!inner(doctor_id)').eq('prescription.doctor_id',dr.doctor_id)
-    if (error) showToast(error.message,'error'); else setData(d)
+    const { data:d, error } = await supabase.from('medicine').select('medicine_id,name,brand,type,description,status,prescription_id,prescription!inner(doctor_id,user_id,users(name))').eq('prescription.doctor_id',dr.doctor_id)
+    if (error) showToast(error.message,'error'); else setData(d||[])
     const { data:pr } = await supabase.from('prescription').select('prescription_id,users(name)').eq('doctor_id',dr.doctor_id)
     setPrescriptions(pr||[])
     setLoading(false)
   }, [showToast, user])
+
   useEffect(() => { load() }, [load])
-  const save = async () => {
-    const { error } = await supabase.from('medicine').insert({ ...form, prescription_id:parseInt(form.prescription_id) })
-    if (error) return showToast(error.message,'error')
-    showToast('Medicine added!'); setModal(false); load()
+
+  const saveMedicine = async () => {
+    if (!form.name || !form.prescription_id) return showToast('Fill all required fields','error')
+    setSaving(true)
+    const { error } = await supabase.from('medicine').insert({ ...form, prescription_id:parseInt(form.prescription_id), status:'Active', added_by_user:false })
+    if (error) { showToast(error.message,'error'); setSaving(false); return }
+    showToast('Medicine added! ✅'); setModal(false); setSaving(false); load()
   }
+
+  const saveSchedule = async () => {
+    if (!schedForm.end_date) return showToast('Please set an end date','error')
+    setSaving(true)
+    // 1. Create dosage
+    const { data:dosage, error:dosErr } = await supabase.from('dosage')
+      .insert({ medicine_id: scheduleModal.medicine_id, amount: parseFloat(schedForm.amount), unit: schedForm.unit, frequency: schedForm.frequency })
+      .select().single()
+    if (dosErr) { showToast('Dosage error: ' + dosErr.message,'error'); setSaving(false); return }
+    // 2. Create schedule
+    const { error:schedErr } = await supabase.from('schedule')
+      .insert({ dosage_id: dosage.dosage_id, start_date: schedForm.start_date, end_date: schedForm.end_date, time: schedForm.time + ':00' })
+    if (schedErr) { showToast('Schedule error: ' + schedErr.message,'error'); setSaving(false); return }
+    showToast(`Schedule set for ${scheduleModal.name}! Patient will see it in their dashboard. 🎉`)
+    setScheduleModal(null); setSaving(false)
+  }
+
   return (
     <div>
       <div className="section-card">
-        <div className="section-header"><div><div className="section-title">💊 Medicines Prescribed</div></div><button className="btn btn-primary btn-sm" onClick={() => setModal(true)}>+ Add Medicine</button></div>
-        {loading?<Loader/>:data.length===0?<Empty icon="💊" text="No medicines prescribed"/>:(
+        <div className="section-header">
+          <div><div className="section-title">💊 Medicines Prescribed</div><div className="section-subtitle">Add medicines & set patient schedules</div></div>
+          <button className="btn btn-primary btn-sm" onClick={() => { setForm({ name:'', brand:'', type:'Tablet', description:'', prescription_id:'' }); setModal(true) }}>+ Add Medicine</button>
+        </div>
+        {loading?<Loader/>:data.length===0?<Empty icon="💊" text="No medicines prescribed yet"/>:(
           <div className="medicine-grid">
             {data.map((m,i) => (
               <div key={m.medicine_id} className="medicine-card">
                 <div className={`medicine-card-top ${getMedCardColor(i)}`}></div>
                 <div className="medicine-card-body">
-                  <div className="medicine-card-header"><div><div className="medicine-card-name">{m.name}</div><div className="medicine-card-brand">{m.brand}</div></div></div>
-                  <div style={{ display:'flex', gap:6 }}><span className="badge badge-blue">{m.type}</span><span className="badge badge-green">Active</span></div>
+                  <div className="medicine-card-header">
+                    <div><div className="medicine-card-name">{m.name}</div><div className="medicine-card-brand">{m.brand||'—'}</div></div>
+                  </div>
+                  <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:8 }}>
+                    <span className="badge badge-blue">{m.type}</span>
+                    <span className="badge badge-green">Active</span>
+                    <span className="badge badge-purple">👤 {m.prescription?.users?.name||'Patient'}</span>
+                  </div>
                   <div className="medicine-card-desc">{m.description||'—'}</div>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    style={{ marginTop:10, width:'100%', justifyContent:'center' }}
+                    onClick={() => { setSchedForm({ amount:'1', unit:'tablet', frequency:'Once daily', start_date:today, end_date:'', time:'08:00' }); setScheduleModal(m) }}
+                  >📅 Set Patient Schedule</button>
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Add Medicine Modal */}
       {modal && (
-        <Modal title="➕ Add Medicine" onClose={() => setModal(false)}>
-          <div className="form-row">
-            <div className="form-group"><label className="form-label">Name</label><input className="form-input" value={form.name} onChange={e => setForm({...form,name:e.target.value})} placeholder="Metformin"/></div>
-            <div className="form-group"><label className="form-label">Brand</label><input className="form-input" value={form.brand} onChange={e => setForm({...form,brand:e.target.value})} placeholder="Glucophage"/></div>
+        <Modal title="➕ Add Medicine for Patient" onClose={() => setModal(false)}>
+          <div className="form-group"><label className="form-label">Prescription (Patient)</label>
+            <select className="form-input" value={form.prescription_id} onChange={e => setForm({...form,prescription_id:e.target.value})}>
+              <option value="">Select prescription...</option>
+              {prescriptions.map(p => <option key={p.prescription_id} value={p.prescription_id}>#RX-{String(p.prescription_id).padStart(4,'0')} — {p.users?.name}</option>)}
+            </select>
           </div>
           <div className="form-row">
-            <div className="form-group"><label className="form-label">Type</label>
-              <select className="form-input" value={form.type} onChange={e => setForm({...form,type:e.target.value})}>{['Tablet','Capsule','Inhaler','Syrup','Injection','Cream','Eye Drop'].map(t=><option key={t}>{t}</option>)}</select>
+            <div className="form-group"><label className="form-label">Medicine Name *</label><input className="form-input" value={form.name} onChange={e => setForm({...form,name:e.target.value})} placeholder="Metformin"/></div>
+            <div className="form-group"><label className="form-label">Brand</label><input className="form-input" value={form.brand} onChange={e => setForm({...form,brand:e.target.value})} placeholder="Glucophage"/></div>
+          </div>
+          <div className="form-group"><label className="form-label">Type</label>
+            <select className="form-input" value={form.type} onChange={e => setForm({...form,type:e.target.value})}>{['Tablet','Capsule','Inhaler','Syrup','Injection','Cream','Eye Drop'].map(t=><option key={t}>{t}</option>)}</select>
+          </div>
+          <div className="form-group"><label className="form-label">Description / Instructions</label>
+            <input className="form-input" value={form.description} onChange={e => setForm({...form,description:e.target.value})} placeholder="Take after food..."/>
+          </div>
+          <div className="modal-footer"><button className="btn btn-ghost" onClick={() => setModal(false)}>Cancel</button><button className="btn btn-primary" onClick={saveMedicine} disabled={saving}>{saving?'Saving...':'Add Medicine'}</button></div>
+        </Modal>
+      )}
+
+      {/* Set Schedule Modal */}
+      {scheduleModal && (
+        <Modal title={`📅 Set Schedule — ${scheduleModal.name}`} onClose={() => setScheduleModal(null)}>
+          <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#1d4ed8', marginBottom:16 }}>
+            💊 Setting schedule for <strong>{scheduleModal.prescription?.users?.name || 'patient'}</strong>. They will see this in their dashboard immediately.
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Amount</label>
+              <input className="form-input" type="number" value={schedForm.amount} onChange={e => setSchedForm({...schedForm,amount:e.target.value})} placeholder="1"/>
             </div>
-            <div className="form-group"><label className="form-label">Prescription</label>
-              <select className="form-input" value={form.prescription_id} onChange={e => setForm({...form,prescription_id:e.target.value})}>
-                <option value="">Select prescription...</option>
-                {prescriptions.map(p => <option key={p.prescription_id} value={p.prescription_id}>#RX-{String(p.prescription_id).padStart(4,'0')} — {p.users?.name}</option>)}
+            <div className="form-group"><label className="form-label">Unit</label>
+              <select className="form-input" value={schedForm.unit} onChange={e => setSchedForm({...schedForm,unit:e.target.value})}>
+                {['tablet','capsule','ml','mg','drop','puff','unit'].map(u=><option key={u}>{u}</option>)}
               </select>
             </div>
           </div>
-          <div className="form-group"><label className="form-label">Description</label><input className="form-input" value={form.description} onChange={e => setForm({...form,description:e.target.value})}/></div>
-          <div className="modal-footer"><button className="btn btn-ghost" onClick={() => setModal(false)}>Cancel</button><button className="btn btn-primary" onClick={save}>Add</button></div>
+          <div className="form-group"><label className="form-label">Frequency</label>
+            <select className="form-input" value={schedForm.frequency} onChange={e => setSchedForm({...schedForm,frequency:e.target.value})}>
+              {['Once daily','Twice daily','Three times daily','Every 8 hours','Every 12 hours','Weekly','As needed'].map(f=><option key={f}>{f}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <div className="form-group"><label className="form-label">Start Date</label>
+              <input className="form-input" type="date" value={schedForm.start_date} onChange={e => setSchedForm({...schedForm,start_date:e.target.value})}/>
+            </div>
+            <div className="form-group"><label className="form-label">End Date</label>
+              <input className="form-input" type="date" value={schedForm.end_date} onChange={e => setSchedForm({...schedForm,end_date:e.target.value})}/>
+            </div>
+          </div>
+          <div className="form-group"><label className="form-label">Time to Take</label>
+            <input className="form-input" type="time" value={schedForm.time} onChange={e => setSchedForm({...schedForm,time:e.target.value})}/>
+          </div>
+          <div className="modal-footer">
+            <button className="btn btn-ghost" onClick={() => setScheduleModal(null)}>Cancel</button>
+            <button className="btn btn-primary" onClick={saveSchedule} disabled={saving}>{saving?'⏳ Saving...':'📅 Set Schedule'}</button>
+          </div>
         </Modal>
       )}
     </div>
