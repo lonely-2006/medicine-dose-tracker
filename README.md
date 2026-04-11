@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Medicine Dose Tracker
 
-## Getting Started
+## Project Overview
+The Medicine Dose Tracker is a comprehensive application designed to help patients manage their medication schedules effectively. With user-friendly interfaces and reliable notifications, users can stay on top of their medication intake.
 
-First, run the development server:
+## Features
+- **User Authentication**: Secure login and registration system for users.
+- **Medication Scheduling**: Users can input their prescriptions and set reminders for medication intake.
+- **Dose Tracking**: Track doses taken and missed, ensuring adherence to prescribed regimens.
+- **Reporting**: Generate reports for healthcare providers based on medication adherence.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Technology Stack
+- **Frontend**: React.js
+- **Backend**: Node.js with Express
+- **Database**: MongoDB
+- **Authentication**: JWT (JSON Web Tokens)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Installation Instructions
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/lonely-2006/medicine-dose-tracker.git
+   ```
+2. Navigate to the project directory:
+   ```bash
+   cd medicine-dose-tracker
+   ```
+3. Install dependencies:
+   ```bash
+   npm install
+   ```
+4. Start the application:
+   ```bash
+   npm start
+   ```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Documentation Links
+- [API Documentation](https://github.com/lonely-2006/medicine-dose-tracker/docs/API.md)
+- [User Guide](https://github.com/lonely-2006/medicine-dose-tracker/docs/UserGuide.md)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Key Components
+- **Dashboard**: Main interface for users to view their medication schedule.
+- **Profile Settings**: Update personal information and medication preferences.
+- **Notification System**: Reminds users of their next medication dose.
 
-## Learn More
+## Contribution Guidelines
+We welcome contributions! Please follow these steps:
+1. Fork the repository.
+2. Create a new branch: `git checkout -b feature/YourFeature`
+3. Make your changes and commit them: `git commit -m 'Add new feature'`
+4. Push to the branch: `git push origin feature/YourFeature`
+5. Submit a pull request.
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Support Information
+For any inquiries, please reach out to the support team at support@medicinedosetracker.com or open an issue in the GitHub repository.
